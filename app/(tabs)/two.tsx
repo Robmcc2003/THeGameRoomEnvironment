@@ -1,9 +1,83 @@
-import { SafeAreaView, StyleSheet, Text } from 'react-native';
+import { getAuth } from 'firebase/auth';
+import { addDoc, collection, deleteDoc, doc, getDocs, query, updateDoc, where } from 'firebase/firestore';
+import React, { useEffect, useState } from 'react';
+import { FlatList, SafeAreaView, StyleSheet, Text, TextInput, TouchableOpacity, View } from 'react-native';
+import { db } from '../../FirebaseConfig';
 
 export default function TabTwoScreen() {
+  const [task, setTask] = useState('');
+  const [todos, setTodos] = useState<any>([]);
+  const auth = getAuth();
+  const user = auth.currentUser;
+  const todosCollection = collection(db, 'todos');
+
+  useEffect(() => {
+    fetchTodos();
+  }, [user]);
+
+  const fetchTodos = async () => {
+    if (user) {
+      const q = query(todosCollection, where("userId", "==", user.uid));
+      const data = await getDocs(q);
+      setTodos(data.docs.map((doc) => ({ ...doc.data(), id: doc.id })));
+    } else {
+      console.log("No user logged in");
+    }
+  };
+
+  const addTodo = async () => {
+    if (user) {
+      await addDoc(todosCollection, { task, completed: false, userId: user.uid });
+      setTask('');
+      fetchTodos();
+    } else {
+      console.log("No user logged in");
+    }
+  };
+
+  const updateTodo = async (id: string, completed: any) => {
+    const todoDoc = doc(db, 'todos', id);
+    await updateDoc(todoDoc, { completed: !completed });
+    fetchTodos();
+  };
+
+  const deleteTodo = async (id: string) => {
+    const todoDoc = doc(db, 'todos', id);
+    await deleteDoc(todoDoc);
+    fetchTodos();
+  };
+
   return (
-    <SafeAreaView style={styles.container}>
-      <Text style={styles.mainTitle}>Two Screen</Text>
+    <SafeAreaView style={styles.safeArea}>
+      <View style={styles.container}>
+        <Text style={styles.mainTitle}>Todo List</Text>
+        <View style={styles.inputContainer}>
+          <TextInput
+            placeholder="New Task"
+            value={task}
+            onChangeText={(text) => setTask(text)}
+            style={styles.input}
+          />
+          <TouchableOpacity style={styles.addButton} onPress={addTodo}>
+            <Text style={styles.buttonText}>Add</Text>
+          </TouchableOpacity>
+        </View>
+        <FlatList
+          data={todos}
+          renderItem={({ item }) => (
+            <View style={styles.todoContainer}>
+              <Text style={{ textDecorationLine: item.completed ? 'line-through' : 'none', flex: 1 }}>{item.task}</Text>
+              <TouchableOpacity style={styles.button} onPress={() => updateTodo(item.id, item.completed)}>
+                <Text style={styles.buttonText}>{item.completed ? "Undo" : "Complete"}</Text>
+              </TouchableOpacity>
+              <TouchableOpacity style={styles.button} onPress={() => deleteTodo(item.id)}>
+                <Text style={styles.buttonText}>Delete</Text>
+              </TouchableOpacity>
+            </View>
+          )}
+          keyExtractor={(item) => item.id}
+        />
+      </View>
     </SafeAreaView>
   );
 }

@@ -5,8 +5,9 @@
 
 import { Text as DefaultText, View as DefaultView } from 'react-native';
 
-import Colors from '@/constants/Colors';
+import Colors from '/Users/robertmccarthy/THeGameRoomEnvironment/constants/Colors.ts';
 import { useColorScheme } from './useColorScheme';
+import React from 'react';
 
 type ThemeProps = {
   lightColor?: string;

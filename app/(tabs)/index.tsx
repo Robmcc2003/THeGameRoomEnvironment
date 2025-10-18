@@ -2,6 +2,7 @@ import { router } from 'expo-router';
 import { getAuth } from 'firebase/auth';
 import { StyleSheet, Text, TouchableOpacity, View } from 'react-native';
 import { auth } from '../../FirebaseConfig';
+import React from 'react';
 
 export default function TabOneScreen() {
 
