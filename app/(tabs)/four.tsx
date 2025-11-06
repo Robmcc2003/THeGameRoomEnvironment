@@ -1,66 +1,115 @@
-import React, { useEffect, useState } from 'react';
-import { SafeAreaView, StyleSheet, Text, TextInput, TouchableOpacity, Alert, View, FlatList, ActivityIndicator,
+// app/(tabs)/four.tsx
+import React, { useEffect, useState, useRef } from 'react';
+import {
+  ActivityIndicator,
+  FlatList,
+  SafeAreaView,
+  TextInput,
+  ScrollView,
+  TouchableOpacity,
+  Alert,
 } from 'react-native';
-import { auth, db } from '../../FirebaseConfig'; // keep your existing path
-import { addDoc, collection, serverTimestamp, doc, setDoc, onSnapshot, query, where, getDoc,
-} from 'firebase/firestore';
+import { useRouter } from 'expo-router';
 import { onAuthStateChanged } from 'firebase/auth';
+import {
+  Unsubscribe,
+  collection,
+  doc,
+  onSnapshot as onDocSnapshot,
+  onSnapshot,
+  query,
+  where,
+  addDoc,
+  setDoc,
+  serverTimestamp,
+} from 'firebase/firestore';
+import { auth, db } from '../../FirebaseConfig';
+import { Text, View } from '../../components/Themed';
+import { styles } from '../../components/style.four'; // ✅ no .ts at end
 
 type League = { id: string; name: string; game?: string | null };
 
 export default function TabFourScreen() {
+  const router = useRouter();
+
+  // States
   const [leagueName, setLeagueName] = useState('');
   const [game, setGame] = useState('');
   const [uid, setUid] = useState<string | null>(auth.currentUser?.uid ?? null);
-
   const [loadingLeagues, setLoadingLeagues] = useState(true);
   const [myLeagues, setMyLeagues] = useState<League[]>([]);
+  const leagueUnsubsRef = useRef<Record<string, Unsubscribe>>({});
 
-  // Keep uid in sync with auth state
+  // Keep user in sync
   useEffect(() => {
-    const unsub = onAuthStateChanged(auth, (user) => {
-      setUid(user?.uid ?? null);
-    });
+    const unsub = onAuthStateChanged(auth, (user) => setUid(user?.uid ?? null));
     return () => unsub();
   }, []);
 
-  // Subscribe to my memberships and load league docs
+  // Subscribe to user's memberships and listen for live league updates
   useEffect(() => {
+    const cleanupAllLeagueListeners = () => {
+      Object.values(leagueUnsubsRef.current).forEach((unsub) => unsub?.());
+      leagueUnsubsRef.current = {};
+    };
+
     if (!uid) {
+      cleanupAllLeagueListeners();
       setMyLeagues([]);
       setLoadingLeagues(false);
       return;
     }
 
     setLoadingLeagues(true);
-    const q = query(collection(db, 'leagueMembers'), where('uid', '==', uid));
-    const unsubscribe = onSnapshot(
-      q,
-      async (snap) => {
-        try {
-          const leagueIds = snap.docs.map((d) => d.data().leagueId as string);
-          if (leagueIds.length === 0) {
-            setMyLeagues([]);
-            setLoadingLeagues(false);
-            return;
-          }
+    const qy = query(collection(db, 'leagueMembers'), where('uid', '==', uid));
 
-          const leagues = await Promise.all(
-            leagueIds.map(async (id) => {
-              const ref = doc(db, 'leagues', id);
-              const ld = await getDoc(ref);
-              if (!ld.exists()) return null;
-              const data = ld.data() as any;
-              return { id: ld.id, name: data.name, game: data.game ?? null } as League;
-            })
-          );
+    const unsubscribeMemberships = onSnapshot(
+      qy,
+      (snap) => {
+        const leagueIds = snap.docs.map((d) => d.data().leagueId as string);
 
-          setMyLeagues(leagues.filter(Boolean) as League[]);
+        if (leagueIds.length === 0) {
+          cleanupAllLeagueListeners();
+          setMyLeagues([]);
           setLoadingLeagues(false);
-        } catch (e) {
-          console.error(e);
-          setLoadingLeagues(false);
+          return;
         }
+
+        // remove listeners for leagues user left
+        Object.keys(leagueUnsubsRef.current).forEach((id) => {
+          if (!leagueIds.includes(id)) {
+            leagueUnsubsRef.current[id]?.();
+            delete leagueUnsubsRef.current[id];
+          }
+        });
+
+        // add listeners for new leagues
+        leagueIds.forEach((id) => {
+          if (leagueUnsubsRef.current[id]) return; // already listening
+
+          const unsub = onDocSnapshot(doc(db, 'leagues', id), (ld) => {
+            if (!ld.exists()) {
+              setMyLeagues((prev) => prev.filter((L) => L.id !== id));
+              return;
+            }
+
+            const data = ld.data() as any;
+            const updated = { id: ld.id, name: data.name, game: data.game ?? null } as League;
+
+            // merge or replace league in state
+            setMyLeagues((prev) => {
+              const i = prev.findIndex((L) => L.id === id);
+              if (i === -1) return [...prev, updated];
+              const copy = [...prev];
+              copy[i] = updated;
+              return copy;
+            });
+
+            setLoadingLeagues(false);
+          });
+
+          leagueUnsubsRef.current[id] = unsub;
+        });
       },
       (err) => {
         console.error(err);
@@ -68,32 +117,31 @@ export default function TabFourScreen() {
       }
     );
 
-    return () => unsubscribe();
+    // cleanup on unmount or uid change
+    return () => {
+      unsubscribeMemberships();
+      cleanupAllLeagueListeners();
+    };
   }, [uid]);
 
+  // 🔹 Create new league
   const handleCreateLeague = async () => {
     const user = auth.currentUser;
-    if (!user) {
-      Alert.alert('Please sign in first');
-      return;
-    }
-    if (!leagueName.trim()) {
-      Alert.alert('League name is required');
-      return;
-    }
+    if (!user) return Alert.alert('Please sign in first');
+    if (!leagueName.trim()) return Alert.alert('League name is required');
 
     try {
-      // 1) Create league
+      // Create new league document
       const leagueRef = await addDoc(collection(db, 'leagues'), {
         name: leagueName.trim(),
         game: game.trim() || null,
         ownerId: user.uid,
-        admins: [user.uid], // optional for future admin logic
+        admins: [user.uid],
         createdAt: serverTimestamp(),
         updatedAt: serverTimestamp(),
       });
 
-      // 2) Add creator as owner in leagueMembers
+      // Add membership record
       const membershipId = `${leagueRef.id}_${user.uid}`;
       await setDoc(doc(db, 'leagueMembers', membershipId), {
         leagueId: leagueRef.id,
@@ -102,7 +150,7 @@ export default function TabFourScreen() {
         joinedAt: serverTimestamp(),
       });
 
-      Alert.alert('Success!', 'League created and you are the owner.');
+      Alert.alert('Success!', 'League created successfully.');
       setLeagueName('');
       setGame('');
     } catch (error: any) {
@@ -112,131 +160,75 @@ export default function TabFourScreen() {
   };
 
   return (
-    <SafeAreaView style={styles.container}>
-      <Text style={styles.mainTitle}>Create League</Text>
-
-      <View style={styles.inputContainer}>
-        <TextInput
-          style={styles.input}
-          placeholder="League name"
-          value={leagueName}
-          onChangeText={setLeagueName}
-          autoCapitalize="words"
-        />
-      </View>
-
-      <View style={styles.inputContainer}>
-        <TextInput
-          style={styles.input}
-          placeholder="Game (e.g. FIFA, NBA 2K)"
-          value={game}
-          onChangeText={setGame}
-          autoCapitalize="words"
-        />
-      </View>
-
-      <TouchableOpacity style={styles.button} onPress={handleCreateLeague}>
-        <Text style={styles.buttonText}>Create League</Text>
-      </TouchableOpacity>
-
-      <View style={{ height: 24 }} />
-
-      <Text style={styles.sectionTitle}>My Leagues</Text>
-
-      {loadingLeagues ? (
-        <ActivityIndicator />
-      ) : myLeagues.length === 0 ? (
-        <Text style={styles.emptyText}>
-          You haven’t created or joined any leagues yet.
-        </Text>
-      ) : (
-        <FlatList
-          style={{ width: '100%', marginTop: 8 }}
-          data={myLeagues}
-          keyExtractor={(item) => item.id}
-          renderItem={({ item }) => (
-            <View style={styles.leagueItem}>
-              <Text style={styles.leagueName}>{item.name}</Text>
-              {item.game ? <Text style={styles.leagueGame}>{item.game}</Text> : null}
-            </View>
-          )}
-        />
-      )}
+    <SafeAreaView style={styles.safeArea}>
+      <ScrollView
+        contentContainerStyle={styles.container}
+        keyboardShouldPersistTaps="handled"
+      >
+        <Text style={styles.mainTitle}>Create League</Text>
+  
+        {/* League Name */}
+        <View style={styles.inputContainer}>
+          <TextInput
+            style={styles.input}
+            placeholder="League name"
+            value={leagueName}
+            onChangeText={setLeagueName}
+            autoCapitalize="words"
+          />
+        </View>
+  
+        {/* Game */}
+        <View style={styles.inputContainer}>
+          <TextInput
+            style={styles.input}
+            placeholder="Game (e.g. FIFA, NBA 2K)"
+            value={game}
+            onChangeText={setGame}
+            autoCapitalize="words"
+          />
+        </View>
+  
+        {/* Create button */}
+        <TouchableOpacity style={styles.button} onPress={handleCreateLeague}>
+          <Text style={styles.buttonText}>Create League</Text>
+        </TouchableOpacity>
+  
+        <View style={{ height: 24 }} />
+  
+        <Text style={styles.sectionTitle}>My Leagues</Text>
+  
+        {loadingLeagues ? (
+          <ActivityIndicator />
+        ) : myLeagues.length === 0 ? (
+          <Text style={styles.emptyText}>
+            You haven’t created or joined any leagues yet.
+          </Text>
+        ) : (
+          <FlatList
+            style={{ width: '100%', marginTop: 8 }}
+            data={myLeagues}
+            keyExtractor={(item) => item.id}
+            // Let the outer ScrollView handle scrolling:
+            scrollEnabled={false}
+            renderItem={({ item }) => (
+              <TouchableOpacity
+                onPress={() =>
+                  router.push({
+                    pathname: '/league/[leagueId]',
+                    params: { leagueId: item.id },
+                  })
+                }
+              >
+                <View style={styles.leagueItem}>
+                  <Text style={styles.leagueName}>{item.name}</Text>
+                  {item.game ? <Text style={styles.leagueGame}>{item.game}</Text> : null}
+                </View>
+              </TouchableOpacity>
+            )}
+          />
+        )}
+      </ScrollView>
     </SafeAreaView>
   );
-}
-
-const styles = StyleSheet.create({
-  container: {
-    flex: 1,
-    alignItems: 'center',
-    justifyContent: 'center',
-    padding: 20,
-    backgroundColor: '#fff',
-  },
-  mainTitle: {
-    fontSize: 28,
-    fontWeight: 'bold',
-    marginBottom: 20,
-    color: '#333',
-  },
-  inputContainer: {
-    width: '100%',
-    marginBottom: 15,
-  },
-  input: {
-    height: 45,
-    borderColor: 'gray',
-    borderWidth: 1,
-    paddingHorizontal: 10,
-    borderRadius: 8,
-    backgroundColor: '#fff',
-  },
-  button: {
-    backgroundColor: '#5C6BC0',
-    paddingVertical: 12,
-    paddingHorizontal: 30,
-    borderRadius: 10,
-    shadowColor: '#5C6BC0',
-    shadowOffset: { width: 0, height: 3 },
-    shadowOpacity: 0.4,
-    shadowRadius: 5,
-  },
-  buttonText: {
-    color: '#fff',
-    fontSize: 18,
-    fontWeight: '600',
-  },
-  sectionTitle: {
-    width: '100%',
-    fontSize: 20,
-    fontWeight: '700',
-    marginTop: 8,
-    color: '#333',
-  },
-  emptyText: {
-    width: '100%',
-    marginTop: 6,
-    color: '#666',
-  },
-  leagueItem: {
-    width: '100%',
-    paddingVertical: 10,
-    paddingHorizontal: 12,
-    borderRadius: 8,
-    borderWidth: 1,
-    borderColor: '#ddd',
-    marginBottom: 10,
-    backgroundColor: '#fafafa',
-  },
-  leagueName: {
-    fontSize: 16,
-    fontWeight: '600',
-    color: '#222',
-  },
-  leagueGame: {
-    marginTop: 2,
-    fontSize: 14,
-    color: '#555',
-  },
-});
+              }

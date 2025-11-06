@@ -6,7 +6,7 @@ import { Pressable } from 'react-native';
 import { useColorScheme } from '/Users/robertmccarthy/THeGameRoomEnvironment/components/useColorScheme.ts';
 import Colors from '/Users/robertmccarthy/THeGameRoomEnvironment/constants/Colors.ts';
 
-// You can explore the built-in icon families and icons on the web at https://icons.expo.fyi/
+
 function TabBarIcon(props: {
   name: React.ComponentProps<typeof FontAwesome>['name'];
   color: string;
@@ -21,7 +21,7 @@ export default function TabLayout() {
     <Tabs
       screenOptions={{
         tabBarActiveTintColor: Colors[colorScheme ?? 'light'].tint,
-        // Disable the static render of the header on web
+        // Disables the static render of the header on web
         // to prevent a hydration error in React Navigation v6.
         headerShown: false,
       }}>
@@ -29,7 +29,7 @@ export default function TabLayout() {
         name="index"
         options={{
           title: 'Sign Out',
-          tabBarIcon: ({ color }) => <TabBarIcon name="code" color={color} />,
+          tabBarIcon: ({ color }) => <TabBarIcon name="sign-out" color={color} />,
           headerRight: () => (
             <Link href="/modal" asChild>
               <Pressable>
@@ -56,15 +56,15 @@ export default function TabLayout() {
       <Tabs.Screen
         name="three"
         options={{
-          title: 'Storage',
-          tabBarIcon: ({ color }) => <TabBarIcon name="code" color={color} />,
+          title: 'My Badges',
+          tabBarIcon: ({ color }) => <TabBarIcon name="star" color={color} />,
         }}
       />
       <Tabs.Screen
         name="four"
         options={{
-          title: 'Functions',
-          tabBarIcon: ({ color }) => <TabBarIcon name="code" color={color} />,
+          title: 'My Leagues',
+          tabBarIcon: ({ color }) => <TabBarIcon name="bars" color={color} />,
         }}
       />
     </Tabs>
