@@ -1,11 +1,11 @@
-// app/league/[leagueId]/add-member.tsx
+
 import React, { useState } from 'react';
 import { View, Text, TextInput, Pressable, ActivityIndicator, Alert } from 'react-native';
 import { useLocalSearchParams, useRouter } from 'expo-router';
 import { addMemberToLeague } from '../../../components/lib/members';
 
 export default function AddMemberScreen() {
-  // read leagueId (handles string | string[]; legacy leagueID fallback)
+  // read leagueId (handles string | string[]; legacy leagueID fallback for fear of errors)
   const params = useLocalSearchParams();
   const leagueId =
     (Array.isArray(params.leagueId) ? params.leagueId[0] : (params.leagueId as string | undefined)) ??

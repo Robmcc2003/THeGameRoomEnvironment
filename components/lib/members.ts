@@ -1,15 +1,7 @@
-
+// components/lib/members.ts
 import { auth, db } from '../../FirebaseConfig';
-import {
-  collection,
-  query,
-  where,
-  getDocs,
-  doc,
-  getDoc,
-  setDoc,
-  serverTimestamp,
-  deleteDoc,
+import { collection, query, where,
+  getDocs, doc, getDoc, setDoc, serverTimestamp, deleteDoc,
 } from 'firebase/firestore';
 
 export type MemberRole = 'member' | 'admin';
@@ -22,31 +14,24 @@ type ResolvedUser = {
   email?: string | null;
 };
 
-/**
- * Resolve a user by email address using the Firestore /users collection.
- * Prefers 'emailLower' (recommended) but falls back to 'email'.
- */
+// Resolve a user by email using /users (emailLower preferred) 
 export async function resolveUserByEmail(email: string): Promise<ResolvedUser | null> {
   const emailLower = (email ?? '').trim().toLowerCase();
   if (!emailLower) return null;
 
   const usersCol = collection(db, 'users');
 
-  // Try emailLower first (recommended profile field)
-  const qLower = query(usersCol, where('emailLower', '==', emailLower));
-  let snap = await getDocs(qLower);
+  // try emailLower
+  let snap = await getDocs(query(usersCol, where('emailLower', '==', emailLower)));
 
-  // Fallback: try 'email' if no emailLower match
+  // fallback: email
   if (snap.empty) {
-    const qEmail = query(usersCol, where('email', '==', emailLower));
-    snap = await getDocs(qEmail);
+    snap = await getDocs(query(usersCol, where('email', '==', emailLower)));
   }
-
   if (snap.empty) return null;
 
   const d = snap.docs[0];
   const data = d.data() as any;
-
   return {
     uid: d.id,
     displayName: data.displayName ?? null,
@@ -55,10 +40,13 @@ export async function resolveUserByEmail(email: string): Promise<ResolvedUser | 
   };
 }
 
-/**
- * Add a user (by email) to a league. If the /users profile is not found,
- * create a pending invite in /leagueInvites and return { kind: 'invited' }.
- */
+// Add member by their email; create pending invite if not found
+// The if statements prevent improper fillign out of the the information
+//async can be used in other files
+// we take the user info and return a promise, either 'added or 'invited'
+//last bit not in use yet but it will combine lesgue id snd uid to create z new user in lesgue if itd not alresdy in
+// use promise here so that we can run stuff outside of the block and the promise ensures action is completed later
+// https://medium.com/@tejaskhartude/promise-in-react-and-react-native-377aeee065df
 export async function addMemberToLeague(opts: {
   leagueId: string;
   email: string;
@@ -76,15 +64,12 @@ export async function addMemberToLeague(opts: {
   const emailLower = (opts.email ?? '').trim().toLowerCase();
   if (!emailLower) throw new Error('Email is empty.');
 
-  // 1) Try resolve existing user profile
   const user = await resolveUserByEmail(emailLower);
 
   if (user) {
-    // Use deterministic member id to avoid duplicates
     const memberId = `${leagueId}_${user.uid}`;
     const memberRef = doc(db, 'leagueMembers', memberId);
 
-    // If already a member, no-op
     const existing = await getDoc(memberRef);
     if (existing.exists()) {
       return { kind: 'added', memberId, user };
@@ -105,7 +90,7 @@ export async function addMemberToLeague(opts: {
     return { kind: 'added', memberId, user };
   }
 
-  // 2) No /users profile yet → create a pending invite
+  // create pending invite
   const inviteId = `${leagueId}_${emailLower}`;
   const inviteRef = doc(db, 'leagueInvites', inviteId);
 
@@ -113,47 +98,62 @@ export async function addMemberToLeague(opts: {
     id: inviteId,
     leagueId,
     emailLower,
-    status: 'pending', // later you can flip to 'accepted' when they sign up
+    status: 'pending',
     createdAt: serverTimestamp(),
     invitedBy: current.uid,
   });
 
-  // can create a row with possible invites
-  // For now im keeping invites separate.
-
   return { kind: 'invited', inviteId, emailLower };
 }
 
-/**
- * List active members for a league from /leagueMembers.
- * (Invites are separate; add a listInvites() if you want to render them too.)
- */
+//List active members for a league 
 export async function listMembers(leagueId: string) {
-  const qMembers = query(collection(db, 'leagueMembers'), where('leagueId', '==', leagueId));
-  const snap = await getDocs(qMembers);
-  return snap.docs.map((d) => ({ id: d.id, ...(d.data() as any) }));
+  const qs = await getDocs(query(collection(db, 'leagueMembers'), where('leagueId', '==', leagueId)));
+  return qs.docs.map((d) => ({ id: d.id, ...(d.data() as any) }));
 }
 
-/** Remove a member by composite id convention leagueId_userId */
+// Remove a member by composite id leagueId_userId 
 export async function removeMember(leagueId: string, userId: string) {
-  const ref = doc(db, 'leagueMembers', `${leagueId}_${userId}`);
-  await deleteDoc(ref);
+  await deleteDoc(doc(db, 'leagueMembers', `${leagueId}_${userId}`));
 }
 
-// Add this type near your other types
+// Invites helpers 
+
 export type InviteRow = {
-    id: string;
-    leagueId: string;
-    emailLower: string;
-    status: 'pending' | 'accepted' | 'declined';
-    invitedBy?: string;
-    createdAt?: any;
-  };
-  
-  // New: list invites for a league
-  export async function listInvites(leagueId: string): Promise<InviteRow[]> {
-    const qInv = query(collection(db, 'leagueInvites'), where('leagueId', '==', leagueId));
-    const snap = await getDocs(qInv);
-    return snap.docs.map((d) => ({ id: d.id, ...(d.data() as any) })) as InviteRow[];
-  }
-  
+  id: string;
+  leagueId: string;
+  emailLower: string;
+  status: 'pending' | 'accepted' | 'declined';
+  invitedBy?: string;
+  createdAt?: any;
+  resentAt?: any;
+};
+
+export async function listInvites(leagueId: string): Promise<InviteRow[]> {
+  const qs = await getDocs(query(collection(db, 'leagueInvites'), where('leagueId', '==', leagueId)));
+  return qs.docs.map((d) => ({ id: d.id, ...(d.data() as any) })) as InviteRow[];
+}
+
+export async function cancelInvite(leagueId: string, emailLower: string) {
+  const id = `${leagueId}_${emailLower.toLowerCase().trim()}`;
+  await deleteDoc(doc(db, 'leagueInvites', id));
+}
+
+export async function resendInvite(leagueId: string, emailLower: string) {
+  const id = `${leagueId}_${emailLower.toLowerCase().trim()}`;
+  await setDoc(
+    doc(db, 'leagueInvites', id),
+    { status: 'pending', resentAt: serverTimestamp() },
+    { merge: true }
+  );
+}
+
+// Member role; sets the member role e.g. user, admin, owner
+export async function setMemberRole(leagueId: string, userId: string, role: MemberRole) {
+    const id = `${leagueId}_${userId}`;
+    await setDoc(
+      doc(db, 'leagueMembers', id),
+      { leagueId, role, updatedAt: serverTimestamp() }, // <-- include leagueId
+      { merge: true }
+    );
+  }  

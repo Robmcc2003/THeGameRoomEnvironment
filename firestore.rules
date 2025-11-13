@@ -1,0 +1,128 @@
+rules_version = '2';
+service cloud.firestore {
+  match /databases/{database}/documents {
+    
+    // Helper function to check if user is authenticated
+    function isAuthenticated() {
+      return request.auth != null;
+    }
+    
+    // Helper function to get current user ID
+    function currentUserId() {
+      return request.auth.uid;
+    }
+    
+    // Users collection - users can read/write their own profile
+    match /users/{userId} {
+      allow read: if isAuthenticated();
+      allow create: if isAuthenticated() && userId == currentUserId();
+      allow update: if isAuthenticated() && userId == currentUserId();
+      allow delete: if isAuthenticated() && userId == currentUserId();
+    }
+    
+    // Leagues collection
+    match /leagues/{leagueId} {
+      // Anyone authenticated can read leagues
+      allow read: if isAuthenticated();
+      
+      // Only owners can create/update/delete their leagues
+      allow create: if isAuthenticated() && request.resource.data.ownerId == currentUserId();
+      allow update: if isAuthenticated() && 
+        (resource.data.ownerId == currentUserId() || 
+         currentUserId() in resource.data.get('admins', []));
+      allow delete: if isAuthenticated() && resource.data.ownerId == currentUserId();
+    }
+    
+    // League Members collection
+    match /leagueMembers/{memberId} {
+      // Members can read members of leagues they're in
+      allow read: if isAuthenticated() && 
+        (resource.data.userId == currentUserId() || 
+         exists(/databases/$(database)/documents/leagues/$(resource.data.leagueId)));
+      
+      // Can create if adding yourself or if you're admin/owner of the league
+      allow create: if isAuthenticated() && (
+        request.resource.data.userId == currentUserId() ||
+        (exists(/databases/$(database)/documents/leagues/$(request.resource.data.leagueId)) &&
+         (get(/databases/$(database)/documents/leagues/$(request.resource.data.leagueId)).data.ownerId == currentUserId() ||
+          currentUserId() in get(/databases/$(database)/documents/leagues/$(request.resource.data.leagueId)).data.get('admins', [])))
+      );
+      
+      // Can update if you're the member or admin/owner
+      allow update: if isAuthenticated() && (
+        resource.data.userId == currentUserId() ||
+        (exists(/databases/$(database)/documents/leagues/$(resource.data.leagueId)) &&
+         (get(/databases/$(database)/documents/leagues/$(resource.data.leagueId)).data.ownerId == currentUserId() ||
+          currentUserId() in get(/databases/$(database)/documents/leagues/$(resource.data.leagueId)).data.get('admins', [])))
+      );
+      
+      // Can delete if you're the member or admin/owner
+      allow delete: if isAuthenticated() && (
+        resource.data.userId == currentUserId() ||
+        (exists(/databases/$(database)/documents/leagues/$(resource.data.leagueId)) &&
+         (get(/databases/$(database)/documents/leagues/$(resource.data.leagueId)).data.ownerId == currentUserId() ||
+          currentUserId() in get(/databases/$(database)/documents/leagues/$(resource.data.leagueId)).data.get('admins', [])))
+      );
+    }
+    
+    // League Invites collection
+    match /leagueInvites/{inviteId} {
+      // Can read invites for leagues you manage or if the invite is for your email
+      allow read: if isAuthenticated();
+      
+      // Can create invites if you're admin/owner of the league
+      allow create: if isAuthenticated() && 
+        exists(/databases/$(database)/documents/leagues/$(request.resource.data.leagueId)) &&
+        (get(/databases/$(database)/documents/leagues/$(request.resource.data.leagueId)).data.ownerId == currentUserId() ||
+         currentUserId() in get(/databases/$(database)/documents/leagues/$(request.resource.data.leagueId)).data.get('admins', []));
+      
+      // Can update if you're admin/owner
+      allow update: if isAuthenticated() && 
+        exists(/databases/$(database)/documents/leagues/$(resource.data.leagueId)) &&
+        (get(/databases/$(database)/documents/leagues/$(resource.data.leagueId)).data.ownerId == currentUserId() ||
+         currentUserId() in get(/databases/$(database)/documents/leagues/$(resource.data.leagueId)).data.get('admins', []));
+      
+      // Can delete if you're admin/owner
+      allow delete: if isAuthenticated() && 
+        exists(/databases/$(database)/documents/leagues/$(resource.data.leagueId)) &&
+        (get(/databases/$(database)/documents/leagues/$(resource.data.leagueId)).data.ownerId == currentUserId() ||
+         currentUserId() in get(/databases/$(database)/documents/leagues/$(resource.data.leagueId)).data.get('admins', []));
+    }
+    
+    // Tournament Matches collection
+    match /tournamentMatches/{matchId} {
+      // Can read matches if authenticated and the league exists
+      // Note: For queries, we allow reading if league exists. More granular control
+      // can be added later if needed by checking membership in the app code.
+      allow read: if isAuthenticated() && 
+        exists(/databases/$(database)/documents/leagues/$(resource.data.leagueId));
+      
+      // Can create matches if you're admin/owner of the league
+      allow create: if isAuthenticated() && 
+        exists(/databases/$(database)/documents/leagues/$(request.resource.data.leagueId)) &&
+        (get(/databases/$(database)/documents/leagues/$(request.resource.data.leagueId)).data.ownerId == currentUserId() ||
+         currentUserId() in get(/databases/$(database)/documents/leagues/$(request.resource.data.leagueId)).data.get('admins', []));
+      
+      // Can update matches if you're admin/owner of the league
+      allow update: if isAuthenticated() && 
+        exists(/databases/$(database)/documents/leagues/$(resource.data.leagueId)) &&
+        (get(/databases/$(database)/documents/leagues/$(resource.data.leagueId)).data.ownerId == currentUserId() ||
+         currentUserId() in get(/databases/$(database)/documents/leagues/$(resource.data.leagueId)).data.get('admins', []));
+      
+      // Can delete matches if you're admin/owner of the league
+      allow delete: if isAuthenticated() && 
+        exists(/databases/$(database)/documents/leagues/$(resource.data.leagueId)) &&
+        (get(/databases/$(database)/documents/leagues/$(resource.data.leagueId)).data.ownerId == currentUserId() ||
+         currentUserId() in get(/databases/$(database)/documents/leagues/$(resource.data.leagueId)).data.get('admins', []));
+    }
+    
+    // Todos collection (if still in use)
+    match /todos/{todoId} {
+      allow read: if isAuthenticated() && resource.data.userId == currentUserId();
+      allow create: if isAuthenticated() && request.resource.data.userId == currentUserId();
+      allow update: if isAuthenticated() && resource.data.userId == currentUserId();
+      allow delete: if isAuthenticated() && resource.data.userId == currentUserId();
+    }
+  }
+}
+

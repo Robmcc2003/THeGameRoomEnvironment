@@ -1,61 +1,125 @@
-import { router } from 'expo-router';
-import { getAuth } from 'firebase/auth';
-import { StyleSheet, Text, TouchableOpacity, View } from 'react-native';
+// Sign Out Tab Screen
+// Allows users to sign out of their account
+
+import { useRouter } from 'expo-router';
+import { signOut as firebaseSignOut } from 'firebase/auth';
+import { ScrollView, StyleSheet, Text, TouchableOpacity, View } from 'react-native';
 import { auth } from '../../FirebaseConfig';
+import Logo from '../../components/Logo';
 import React from 'react';
 
 export default function TabOneScreen() {
+  const router = useRouter();
 
-  getAuth().onAuthStateChanged((user) => {
-    if (!user) router.replace('/');
-  });
+  // Handle sign out button press
+  const handleSignOut = async () => {
+    try {
+      // Sign out from Firebase
+      await firebaseSignOut(auth);
+      
+      // Navigate back to login screen
+      // The root layout will handle redirecting based on auth state
+      router.replace('/');
+      
+    } catch (error: any) {
+      console.error('Sign out error:', error);
+      // Even if signout fails, navigate to login screen
+      router.replace('/');
+      alert('Sign out failed: ' + (error?.message || 'Unknown error'));
+    }
+  };
 
   return (
-    <View style={styles.container}>
-      <Text style={styles.title}>Sign Out</Text>
-      <TouchableOpacity style={styles.button} onPress={() => auth.signOut()}>
-        <Text style={styles.text}>Sign Out</Text>
-      </TouchableOpacity>
-    </View>
+    <ScrollView 
+      contentContainerStyle={styles.scrollContent}
+      showsVerticalScrollIndicator={false}
+    >
+      <View style={styles.container}>
+        {/* Logo section */}
+        <View style={styles.logoSection}>
+          <Logo size="large" showTagline={true} />
+        </View>
+        
+        {/* Content section with sign out button */}
+        <View style={styles.contentSection}>
+          <Text style={styles.title}>Account</Text>
+          <Text style={styles.subtitle}>Sign out to switch accounts</Text>
+          
+          {/* Sign out button */}
+          <TouchableOpacity 
+            style={styles.button} 
+            onPress={handleSignOut}
+          >
+            <Text style={styles.text}>Sign Out</Text>
+          </TouchableOpacity>
+        </View>
+      </View>
+    </ScrollView>
   );
 }
 
+// Styles for the sign out screen
 const styles = StyleSheet.create({
+  scrollContent: {
+    flexGrow: 1,
+    paddingBottom: 40,
+  },
   container: {
     flex: 1,
-    justifyContent: 'center',
+    backgroundColor: '#FFFFFF',
+  },
+  logoSection: {
+    paddingTop: 40,
+    paddingBottom: 20,
     alignItems: 'center',
-    backgroundColor: '#FAFAFA', // A softer white for a modern, minimalist background
+    borderBottomWidth: 2,
+    borderBottomColor: '#000000',
+    marginBottom: 30,
+    marginHorizontal: 20,
+  },
+  contentSection: {
+    paddingHorizontal: 20,
+    alignItems: 'center',
+    justifyContent: 'center',
+    flex: 1,
   },
   title: {
-    fontSize: 28, // A bit larger for a more striking appearance
-    fontWeight: '800', // Extra bold for emphasis
-    color: '#1A237E', // A deep indigo for a sophisticated, modern look
-    marginBottom: 40, // Increased space for a more airy, open feel
+    fontSize: 32,
+    fontWeight: '900',
+    color: '#000000',
+    marginBottom: 8,
+    letterSpacing: 0.5,
   },
-  separator: {
-    marginVertical: 30,
-    height: 2, // Slightly thicker for a more pronounced separation
-    width: '80%',
-    backgroundColor: '#E8EAF6', // Using a light indigo to match the border of the textInput
+  subtitle: {
+    fontSize: 16,
+    color: '#666666',
+    marginBottom: 40,
+    fontWeight: '500',
+    textAlign: 'center',
   },
   button: {
-    width: '90%',
-    backgroundColor: '#5C6BC0', // A lighter indigo to complement the title color
+    width: '100%',
+    maxWidth: 400,
+    backgroundColor: '#DC143C', // Red button
     padding: 20,
-    borderRadius: 15, // Softly rounded corners for a modern, friendly touch
+    borderRadius: 12,
     alignItems: 'center',
     justifyContent: 'center',
-    shadowColor: '#5C6BC0', // Shadow color to match the button for a cohesive look
+    shadowColor: '#DC143C',
     shadowOffset: { width: 0, height: 4 },
-    shadowOpacity: 0.4,
-    shadowRadius: 5,
-    elevation: 5, // Slightly elevated for a subtle 3D effect
-    marginTop: 15, // Adjusted to match the new style
+    shadowOpacity: 0.3,
+    shadowRadius: 8,
+    elevation: 5,
+    borderWidth: 2,
+    borderColor: '#000000',
+  },
+  buttonDisabled: {
+    opacity: 0.7,
   },
   text: {
-    color: '#FFFFFF', // Maintained white for clear visibility
-    fontSize: 18, // Slightly larger for emphasis
-    fontWeight: '600', // Semi-bold for a balanced weight
+    color: '#FFFFFF',
+    fontSize: 18,
+    fontWeight: '700',
+    letterSpacing: 0.5,
   }
 });

@@ -1,38 +1,30 @@
-// app/(tabs)/four.tsx
-import React, { useEffect, useState, useRef } from 'react';
-import {
-  ActivityIndicator,
-  FlatList,
-  SafeAreaView,
-  TextInput,
-  ScrollView,
-  TouchableOpacity,
-  Alert,
-} from 'react-native';
+// primary file for the My leagues tab 
+// *****REMINDER TO DEAL WITH SAFE AREA VIEW IN A FUTURE IT AS NO LONGER SUPPORTED
+// expo router
 import { useRouter } from 'expo-router';
+//firebase auth
 import { onAuthStateChanged } from 'firebase/auth';
-import {
-  Unsubscribe,
-  collection,
-  doc,
-  onSnapshot as onDocSnapshot,
-  onSnapshot,
-  query,
-  where,
-  addDoc,
-  setDoc,
-  serverTimestamp,
+import { Unsubscribe, addDoc, collection, doc, onSnapshot as onDocSnapshot, onSnapshot, query,
+  serverTimestamp, setDoc, where,
 } from 'firebase/firestore';
+//uses react hooks. Functions that add stuff without writing classes/defs
+// learned using https://www.w3schools.com/react/react_hooks.asp and adapted for my project with my own work 
+import React, { useEffect, useRef, useState } from 'react';
+import { ActivityIndicator, Alert, FlatList, SafeAreaView, ScrollView, TextInput, TouchableOpacity,
+} from 'react-native';
 import { auth, db } from '../../FirebaseConfig';
+import Logo from '../../components/Logo';
 import { Text, View } from '../../components/Themed';
-import { styles } from '../../components/style.four'; // ✅ no .ts at end
-
+import { styles } from '../../components/style.four'; 
+// all the above are relatively pathed as they should be
+//defines the league type for the file
 type League = { id: string; name: string; game?: string | null };
 
 export default function TabFourScreen() {
   const router = useRouter();
 
-  // States
+  // creatin/ defining states https://www.w3schools.com/react/react_usestate.asp
+  // allows me to track the state of something in a function basically allows me to track status
   const [leagueName, setLeagueName] = useState('');
   const [game, setGame] = useState('');
   const [uid, setUid] = useState<string | null>(auth.currentUser?.uid ?? null);
@@ -40,13 +32,14 @@ export default function TabFourScreen() {
   const [myLeagues, setMyLeagues] = useState<League[]>([]);
   const leagueUnsubsRef = useRef<Record<string, Unsubscribe>>({});
 
-  // Keep user in sync
+  // Keep user in sync with changes
   useEffect(() => {
     const unsub = onAuthStateChanged(auth, (user) => setUid(user?.uid ?? null));
     return () => unsub();
   }, []);
 
-  // Subscribe to user's memberships and listen for live league updates
+  // Subscribes to user's memberships and listen for live league updates
+  //https://www.w3schools.com/react/react_useeffect.asp  use effect from w3 schools allows 'side affects'
   useEffect(() => {
     const cleanupAllLeagueListeners = () => {
       Object.values(leagueUnsubsRef.current).forEach((unsub) => unsub?.());
@@ -61,8 +54,9 @@ export default function TabFourScreen() {
     }
 
     setLoadingLeagues(true);
-    const qy = query(collection(db, 'leagueMembers'), where('uid', '==', uid));
-
+    const qy = query(collection(db, 'leagueMembers'), where('userId', '==', uid));
+// im using on snapshot here which is from firestore. Means that every change in the db it changes for the user. Realt ime lsitener. 
+//If the user has no leagues it stops listneing
     const unsubscribeMemberships = onSnapshot(
       qy,
       (snap) => {
@@ -117,14 +111,16 @@ export default function TabFourScreen() {
       }
     );
 
-    // cleanup on unmount or uid change
+    // cleanup uid change
     return () => {
       unsubscribeMemberships();
       cleanupAllLeagueListeners();
     };
   }, [uid]);
 
-  // 🔹 Create new league
+  // Create new league. FChecks if user is logged in and adds new document to firestore leagues collection
+  //Then creates a leagueMember record for the current user as the owner.
+  //Shows a success message and clears the form.
   const handleCreateLeague = async () => {
     const user = auth.currentUser;
     if (!user) return Alert.alert('Please sign in first');
@@ -144,10 +140,13 @@ export default function TabFourScreen() {
       // Add membership record
       const membershipId = `${leagueRef.id}_${user.uid}`;
       await setDoc(doc(db, 'leagueMembers', membershipId), {
+        id: membershipId,
         leagueId: leagueRef.id,
-        uid: user.uid,
-        role: 'owner',
+        userId: user.uid,
+        role: 'admin',
+        status: 'active',
         joinedAt: serverTimestamp(),
+        addedBy: user.uid,
       });
 
       Alert.alert('Success!', 'League created successfully.');
@@ -158,13 +157,18 @@ export default function TabFourScreen() {
       Alert.alert('Error', error?.message ?? 'Unknown error');
     }
   };
-
+// the styling and UI FOR the league tab
   return (
     <SafeAreaView style={styles.safeArea}>
       <ScrollView
         contentContainerStyle={styles.container}
         keyboardShouldPersistTaps="handled"
+        showsVerticalScrollIndicator={false}
       >
+        <View style={styles.logoSection}>
+          <Logo size="medium" showTagline={true} />
+        </View>
+        
         <Text style={styles.mainTitle}>Create League</Text>
   
         {/* League Name */}
@@ -231,4 +235,4 @@ export default function TabFourScreen() {
       </ScrollView>
     </SafeAreaView>
   );
-              }
+}
