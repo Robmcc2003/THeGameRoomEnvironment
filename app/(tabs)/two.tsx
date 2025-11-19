@@ -1,19 +1,15 @@
-// Home Tab - Explore and Join Leagues
-// This screen shows all available leagues that users can browse and join
-
 import { useRouter } from 'expo-router';
 import { getAuth } from 'firebase/auth';
 import { collection, getDocs, query, where } from 'firebase/firestore';
 import React, { useCallback, useEffect, useState } from 'react';
-import { ActivityIndicator, Alert, FlatList, RefreshControl, SafeAreaView, StyleSheet, TouchableOpacity, View as RNView } from 'react-native';
+import { ActivityIndicator, Alert, FlatList, View as RNView, RefreshControl, SafeAreaView, StyleSheet, TouchableOpacity } from 'react-native';
 import { db } from '../../FirebaseConfig';
-import { joinTournament } from '../../components/lib/tournaments';
 import Logo from '../../components/Logo';
 import { Text as ThemedText, View } from '../../components/Themed';
+import { joinTournament } from '../../components/lib/tournaments';
 import { useColorScheme } from '../../components/useColorScheme';
 import Colors from '../../constants/Colors';
 
-// Type definition for a league
 type League = {
   id: string;
   name: string;
@@ -30,22 +26,20 @@ type League = {
 export default function TabTwoScreen() {
   const router = useRouter();
   const auth = getAuth();
-  const user = auth.currentUser; // Current signed-in user
+  const user = auth.currentUser;
   
-  // Get theme colors
   const colorScheme = useColorScheme() ?? 'light';
   const palette = Colors[colorScheme];
-  const tint = palette.tint; // Red color
+  const tint = palette.tint;
   const cardBg = palette.card ?? (colorScheme === 'dark' ? '#16181A' : '#FFFFFF');
   const borderColor = palette.border ?? (colorScheme === 'dark' ? '#2A2D2F' : '#E6E6E6');
   const textColor = palette.text ?? '#1F1F1F';
 
-  // State for leagues list
   const [leagues, setLeagues] = useState<League[]>([]);
-  const [loading, setLoading] = useState(true); // Loading state
-  const [refreshing, setRefreshing] = useState(false); // Pull-to-refresh state
-  const [joiningId, setJoiningId] = useState<string | null>(null); // Track which league is being joined
-  const [userMemberships, setUserMemberships] = useState<Set<string>>(new Set()); // Set of league IDs user has joined
+  const [loading, setLoading] = useState(true);
+  const [refreshing, setRefreshing] = useState(false);
+  const [joiningId, setJoiningId] = useState<string | null>(null);
+  const [userMemberships, setUserMemberships] = useState<Set<string>>(new Set());
 
   // Fetch all leagues and check which ones the user has joined
   const fetchLeagues = useCallback(async () => {
@@ -57,7 +51,6 @@ export default function TabTwoScreen() {
     try {
       setLoading(true);
       
-      // Get all leagues from Firestore
       const leaguesQuery = query(collection(db, 'leagues'));
       const leaguesSnap = await getDocs(leaguesQuery);
       const allLeagues = leaguesSnap.docs.map(doc => ({
@@ -65,7 +58,6 @@ export default function TabTwoScreen() {
         ...doc.data(),
       })) as League[];
 
-      // Get user's active memberships to show which leagues they've joined
       const membersQuery = query(
         collection(db, 'leagueMembers'),
         where('userId', '==', user.uid),
@@ -74,7 +66,6 @@ export default function TabTwoScreen() {
       const membersSnap = await getDocs(membersQuery);
       const membershipIds = new Set(membersSnap.docs.map(d => d.data().leagueId));
 
-      // Update state
       setUserMemberships(membershipIds);
       setLeagues(allLeagues);
     } catch (error: any) {
@@ -86,18 +77,15 @@ export default function TabTwoScreen() {
     }
   }, [user]);
 
-  // Load leagues when component mounts
   useEffect(() => {
     fetchLeagues();
   }, [fetchLeagues]);
 
-  // Handle pull-to-refresh
   const onRefresh = () => {
     setRefreshing(true);
     fetchLeagues();
   };
 
-  // Handle joining a league
   const handleJoinLeague = async (leagueId: string) => {
     if (!user) {
       Alert.alert('Error', 'You must be signed in to join a league.');
@@ -105,10 +93,10 @@ export default function TabTwoScreen() {
     }
 
     try {
-      setJoiningId(leagueId); // Show loading state for this league
-      await joinTournament(leagueId); // Join the tournament
+      setJoiningId(leagueId);
+      await joinTournament(leagueId);
       Alert.alert('Success!', 'You have joined the league.');
-      await fetchLeagues(); // Refresh the list to update join status
+      await fetchLeagues();
     } catch (error: any) {
       Alert.alert('Could not join league', error?.message ?? 'Unknown error');
     } finally {
@@ -116,7 +104,6 @@ export default function TabTwoScreen() {
     }
   };
 
-  // Navigate to league detail screen
   const handleViewLeague = (leagueId: string) => {
     router.push({
       pathname: '/league/[leagueId]',
@@ -124,10 +111,9 @@ export default function TabTwoScreen() {
     });
   };
 
-  // Render a single league card in the list
   const renderLeague = ({ item }: { item: League }) => {
-    const isMember = userMemberships.has(item.id); // Check if user has joined this league
-    const isJoining = joiningId === item.id; // Check if currently joining this league
+    const isMember = userMemberships.has(item.id);
+    const isJoining = joiningId === item.id;
 
     return (
       <RNView style={styles.leagueCard}>
@@ -191,13 +177,14 @@ export default function TabTwoScreen() {
                   👥
                 </ThemedText>
                 <ThemedText style={{ fontSize: 12, opacity: 0.7, color: textColor, fontWeight: '600' }}>
-                  Max {item.maxParticipants}
+                  Max {String(item.maxParticipants)}
                 </ThemedText>
               </RNView>
             )}
             {item.startDate && (
               <RNView style={{ flexDirection: 'row', alignItems: 'center', gap: 4 }}>
                 <ThemedText style={{ fontSize: 12, opacity: 0.6, color: textColor, fontWeight: '600' }}>
+                  📅
                 </ThemedText>
                 <ThemedText style={{ fontSize: 12, opacity: 0.7, color: textColor, fontWeight: '600' }}>
                   {item.startDate}
@@ -222,6 +209,7 @@ export default function TabTwoScreen() {
             >
               <ThemedText style={{ fontWeight: '700', color: textColor, fontSize: 15 }}>View</ThemedText>
             </TouchableOpacity>
+            
             {!isMember ? (
               <TouchableOpacity
                 onPress={() => handleJoinLeague(item.id)}
@@ -269,7 +257,6 @@ export default function TabTwoScreen() {
     );
   };
 
-  // Show message if user is not signed in
   if (!user) {
     return (
       <SafeAreaView style={styles.safeArea}>
@@ -282,8 +269,6 @@ export default function TabTwoScreen() {
       </SafeAreaView>
     );
   }
-
-  // Main screen with leagues list
 
   return (
     <SafeAreaView style={styles.safeArea}>
@@ -329,6 +314,12 @@ const styles = StyleSheet.create({
   safeArea: {
     flex: 1,
     backgroundColor: '#FFFFFF',
+  },
+  container: {
+    flex: 1,
+    alignItems: 'center',
+    justifyContent: 'center',
+    padding: 20,
   },
   headerSection: {
     paddingTop: 20,

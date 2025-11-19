@@ -1,7 +1,24 @@
+// Tournament Bracket Screen
+// This screen displays tournament brackets and standings for a league.
+// It has two view modes:
+// 1. Standings: Shows a leaderboard with wins, losses, and win rates
+// 2. Bracket: Shows a visual tournament bracket tree (for bracket tournaments)
+// The bracket visualization shows:
+// - Matches in columns by round
+// - Connecting lines between matches
+// - Winner highlighting
+// - User match indicators
+// - Crown icon for final winner
+// References:
+// - React Native ScrollView: https://reactnative.dev/docs/scrollview
+// - React Native Dimensions: https://reactnative.dev/docs/dimensions
+// - Expo Router: https://docs.expo.dev/router/introduction/
+// - React useMemo: https://react.dev/reference/react/useMemo
+
 import { useLocalSearchParams, useRouter } from 'expo-router';
 import { Stack } from 'expo-router/stack';
 import React, { useCallback, useEffect, useMemo, useState } from 'react';
-import { ActivityIndicator, Alert, FlatList, RefreshControl, ScrollView, TouchableOpacity, View as RNView } from 'react-native';
+import { ActivityIndicator, Alert, Dimensions, FlatList, RefreshControl, ScrollView, TouchableOpacity, View as RNView } from 'react-native';
 import { Text, View } from '../../../components/Themed';
 import Logo from '../../../components/Logo';
 import { useColorScheme } from '../../../components/useColorScheme';
@@ -10,11 +27,14 @@ import { collection, doc, getDoc, getDocs, query, where } from 'firebase/firesto
 import { auth, db } from '../../../FirebaseConfig';
 import { getTournamentBracket, getTournamentStandings, Match } from '../../../components/lib/tournaments';
 
+// League Document Type
+// This defines the structure of a league document from Firestore.
 type LeagueDoc = {
-  name: string;
-  game?: string | null;
-  ownerId: string;
-  numberOfRounds?: number | null;
+  name: string; // League name
+  game?: string | null; // Game being played (optional)
+  ownerId: string; // User ID of league creator
+  numberOfRounds?: number | null; // Number of rounds (optional)
+  tournamentFormat?: 'normal_league' | 'single_elimination' | 'double_elimination' | 'round_robin' | null; // Tournament type
 };
 
 export default function TournamentBracketScreen() {
@@ -123,11 +143,11 @@ export default function TournamentBracketScreen() {
 
   useEffect(() => {
     loadLeague();
-  }, [loadLeague]);
+  }, [leagueId]);
 
   useEffect(() => {
     loadBracket();
-  }, [loadBracket]);
+  }, [leagueId]);
 
   const onRefresh = () => {
     setRefreshing(true);
@@ -138,6 +158,286 @@ export default function TournamentBracketScreen() {
     if (!userId) return 'TBD';
     const member = memberMap[userId];
     return member?.displayName || userId.substring(0, 8) + '...';
+  };
+
+  // Check if this is a bracket tournament
+  const isBracketTournament = useMemo(() => {
+    return league?.tournamentFormat === 'single_elimination' || league?.tournamentFormat === 'double_elimination';
+  }, [league?.tournamentFormat]);
+
+  // Organize matches by round for bracket display
+  const matchesByRound = useMemo(() => {
+    if (!bracket || !isBracketTournament) return {};
+    const rounds: Record<number, Match[]> = {};
+    bracket.matches.forEach(match => {
+      if (!rounds[match.round]) {
+        rounds[match.round] = [];
+      }
+      rounds[match.round].push(match);
+    });
+    // Sort matches within each round by match number
+    Object.keys(rounds).forEach(round => {
+      rounds[parseInt(round)].sort((a, b) => (a.matchNumber || 0) - (b.matchNumber || 0));
+    });
+    return rounds;
+  }, [bracket, isBracketTournament]);
+
+  // Render a bracket tree visualization
+  const renderBracketTree = () => {
+    if (!bracket || !isBracketTournament || Object.keys(matchesByRound).length === 0) {
+      return (
+        <RNView style={{ padding: 20, alignItems: 'center' }}>
+          <Text style={{ opacity: 0.7, fontSize: 16 }}>No bracket matches available yet.</Text>
+        </RNView>
+      );
+    }
+
+    const rounds = Object.keys(matchesByRound).map(r => parseInt(r)).sort((a, b) => a - b);
+    const maxRound = Math.max(...rounds);
+    const screenWidth = Dimensions.get('window').width;
+    const bracketPadding = 16;
+    const columnSpacing = 30;
+    const matchWidth = 140;
+    const matchHeight = 70;
+    const verticalSpacing = 16;
+
+    // Calculate total width needed
+    const totalWidth = (matchWidth + columnSpacing) * rounds.length + bracketPadding * 2;
+
+    return (
+      <ScrollView 
+        horizontal 
+        showsHorizontalScrollIndicator={true} 
+        style={{ flex: 1 }}
+        contentContainerStyle={{ paddingVertical: 20 }}
+      >
+        <RNView style={{ flexDirection: 'row', paddingHorizontal: bracketPadding, minWidth: Math.max(totalWidth, screenWidth) }}>
+          {rounds.map((round, roundIndex) => {
+            const matches = matchesByRound[round];
+            const isFinalRound = round === maxRound;
+            
+            return (
+              <RNView
+                key={round}
+                style={{
+                  width: matchWidth,
+                  marginRight: roundIndex < rounds.length - 1 ? columnSpacing : 0,
+                  position: 'relative',
+                }}
+              >
+                {/* Round Label */}
+                <RNView style={{ marginBottom: 12, alignItems: 'center' }}>
+                  <Text style={{ fontSize: 14, fontWeight: '800', color: isFinalRound ? tint : textColor }}>
+                    {isFinalRound ? '👑 Final' : `Round ${String(round)}`}
+                  </Text>
+                </RNView>
+
+                {/* Matches in this round */}
+                <RNView style={{ gap: verticalSpacing }}>
+                  {matches.map((match, matchIndex) => {
+                    const isUserMatch = uid && (match.player1Id === uid || match.player2Id === uid);
+                    const isCompleted = match.status === 'completed';
+                    const winnerId = match.result?.winnerId;
+                    const player1Name = getPlayerName(match.player1Id);
+                    const player2Name = match.player2Id ? getPlayerName(match.player2Id) : 'TBD';
+
+                    return (
+                      <RNView key={match.id} style={{ position: 'relative' }}>
+                        {/* Match Box */}
+                        <View
+                          style={{
+                            borderWidth: 2,
+                            borderColor: isUserMatch ? tint : (isCompleted && winnerId ? tint : borderColor),
+                            backgroundColor: isUserMatch 
+                              ? (colorScheme === 'dark' ? 'rgba(220,20,60,0.15)' : 'rgba(220,20,60,0.08)')
+                              : cardBg,
+                            borderRadius: 8,
+                            padding: 8,
+                            minHeight: matchHeight,
+                            shadowColor: isUserMatch ? tint : '#000000',
+                            shadowOffset: { width: 0, height: 2 },
+                            shadowOpacity: isUserMatch ? 0.3 : 0.1,
+                            shadowRadius: 4,
+                            elevation: isUserMatch ? 5 : 2,
+                          }}
+                        >
+                          {/* Player 1 */}
+                          <RNView style={{ 
+                            flexDirection: 'row', 
+                            alignItems: 'center', 
+                            justifyContent: 'space-between',
+                            marginBottom: 4,
+                            paddingVertical: 4,
+                            paddingHorizontal: 6,
+                            backgroundColor: winnerId === match.player1Id ? (colorScheme === 'dark' ? 'rgba(220,20,60,0.2)' : 'rgba(220,20,60,0.1)') : 'transparent',
+                            borderRadius: 4,
+                          }}>
+                            <Text 
+                              numberOfLines={1}
+                              style={{ 
+                                fontSize: 11,
+                                fontWeight: winnerId === match.player1Id ? '800' : (match.player1Id === uid ? '700' : '500'),
+                                color: match.player1Id === uid ? tint : (winnerId === match.player1Id ? tint : textColor),
+                                flex: 1,
+                              }}
+                            >
+                              {player1Name}
+                            </Text>
+                            {isCompleted && match.result?.player1Score !== undefined && (
+                              <Text style={{ fontSize: 10, fontWeight: '700', color: textColor, marginLeft: 4 }}>
+                                {String(match.result.player1Score)}
+                              </Text>
+                            )}
+                          </RNView>
+
+                          {/* Divider */}
+                          <RNView style={{ 
+                            height: 1, 
+                            backgroundColor: borderColor, 
+                            marginVertical: 4,
+                            opacity: 0.3,
+                          }} />
+
+                          {/* Player 2 */}
+                          <RNView style={{ 
+                            flexDirection: 'row', 
+                            alignItems: 'center', 
+                            justifyContent: 'space-between',
+                            paddingVertical: 4,
+                            paddingHorizontal: 6,
+                            backgroundColor: winnerId === match.player2Id ? (colorScheme === 'dark' ? 'rgba(220,20,60,0.2)' : 'rgba(220,20,60,0.1)') : 'transparent',
+                            borderRadius: 4,
+                          }}>
+                            <Text 
+                              numberOfLines={1}
+                              style={{ 
+                                fontSize: 11,
+                                fontWeight: winnerId === match.player2Id ? '800' : (match.player2Id === uid ? '700' : '500'),
+                                color: match.player2Id === uid ? tint : (winnerId === match.player2Id ? tint : textColor),
+                                flex: 1,
+                              }}
+                            >
+                              {player2Name}
+                            </Text>
+                            {isCompleted && match.result?.player2Score !== undefined && (
+                              <Text style={{ fontSize: 10, fontWeight: '700', color: textColor, marginLeft: 4 }}>
+                                {String(match.result.player2Score)}
+                              </Text>
+                            )}
+                          </RNView>
+
+                          {/* Status indicator */}
+                          {isUserMatch && (
+                            <RNView style={{ 
+                              position: 'absolute', 
+                              top: -6, 
+                              right: -6, 
+                              backgroundColor: tint, 
+                              borderRadius: 10, 
+                              width: 20, 
+                              height: 20, 
+                              alignItems: 'center', 
+                              justifyContent: 'center',
+                              borderWidth: 2,
+                              borderColor: '#000000',
+                            }}>
+                              <Text style={{ fontSize: 10, fontWeight: '800', color: '#FFFFFF' }}>★</Text>
+                            </RNView>
+                          )}
+                          {/* Crown icon for final round winner */}
+                          {isFinalRound && isCompleted && winnerId && (
+                            <RNView style={{ 
+                              position: 'absolute', 
+                              top: -8, 
+                              left: -8, 
+                              backgroundColor: tint, 
+                              borderRadius: 12, 
+                              width: 24, 
+                              height: 24, 
+                              alignItems: 'center', 
+                              justifyContent: 'center',
+                              borderWidth: 2,
+                              borderColor: '#000000',
+                            }}>
+                              <Text style={{ fontSize: 12 }}>👑</Text>
+                            </RNView>
+                          )}
+                        </View>
+
+                        {/* Connecting lines to next round (if not final round) */}
+                        {!isFinalRound && (
+                          <>
+                            {/* Horizontal line to next round */}
+                            <RNView
+                              style={{
+                                position: 'absolute',
+                                right: -columnSpacing,
+                                top: matchHeight / 2 - 1,
+                                width: columnSpacing,
+                                height: 2,
+                                backgroundColor: borderColor,
+                                opacity: 0.6,
+                                zIndex: 0,
+                              }}
+                            />
+                            {/* Vertical line connecting pairs of matches */}
+                            {matchIndex % 2 === 0 && matches.length > matchIndex + 1 && (
+                              <>
+                                {/* Top vertical line from this match */}
+                                <RNView
+                                  style={{
+                                    position: 'absolute',
+                                    right: -columnSpacing,
+                                    top: matchHeight / 2,
+                                    width: 2,
+                                    height: (matchHeight + verticalSpacing) / 2,
+                                    backgroundColor: borderColor,
+                                    opacity: 0.6,
+                                    zIndex: 0,
+                                  }}
+                                />
+                                {/* Bottom vertical line to next match */}
+                                <RNView
+                                  style={{
+                                    position: 'absolute',
+                                    right: -columnSpacing,
+                                    bottom: -(matchHeight + verticalSpacing) / 2,
+                                    width: 2,
+                                    height: (matchHeight + verticalSpacing) / 2,
+                                    backgroundColor: borderColor,
+                                    opacity: 0.6,
+                                    zIndex: 0,
+                                  }}
+                                />
+                              </>
+                            )}
+                            {/* For odd-numbered matches or last match in round, extend line down */}
+                            {matchIndex % 2 === 1 && (
+                              <RNView
+                                style={{
+                                  position: 'absolute',
+                                  right: -columnSpacing,
+                                  top: matchHeight / 2,
+                                  width: 2,
+                                  height: (matchHeight + verticalSpacing) / 2,
+                                  backgroundColor: borderColor,
+                                  opacity: 0.6,
+                                  zIndex: 0,
+                                }}
+                              />
+                            )}
+                          </>
+                        )}
+                      </RNView>
+                    );
+                  })}
+                </RNView>
+              </RNView>
+            );
+          })}
+        </RNView>
+      </ScrollView>
+    );
   };
 
   const renderMatch = (match: Match) => {
@@ -166,7 +466,7 @@ export default function TournamentBracketScreen() {
       >
         <RNView style={{ flexDirection: 'row', justifyContent: 'space-between', alignItems: 'center', marginBottom: 4 }}>
           <Text style={{ fontSize: 12, opacity: 0.7 }}>
-            Round {match.round} • Match {match.matchNumber}
+            Round {String(match.round)} • Match {String(match.matchNumber)}
           </Text>
           {isUserMatch && (
             <RNView style={{ backgroundColor: tint, paddingHorizontal: 8, paddingVertical: 4, borderRadius: 8 }}>
@@ -185,7 +485,7 @@ export default function TournamentBracketScreen() {
             </Text>
             {isCompleted && match.result?.player1Score !== undefined && (
               <Text style={{ fontSize: 13, opacity: 0.7, marginTop: 4, fontWeight: '600' }}>
-                Score: {match.result.player1Score}
+                Score: {String(match.result.player1Score)}
               </Text>
             )}
           </RNView>
@@ -202,7 +502,7 @@ export default function TournamentBracketScreen() {
                 </Text>
                 {isCompleted && match.result?.player2Score !== undefined && (
                   <Text style={{ fontSize: 13, opacity: 0.7, marginTop: 4, fontWeight: '600' }}>
-                    Score: {match.result.player2Score}
+                    Score: {String(match.result.player2Score)}
                   </Text>
                 )}
               </>
@@ -263,7 +563,7 @@ export default function TournamentBracketScreen() {
                 minWidth: 40, 
                 color: index === 0 ? tint : (player.userId === uid ? tint : textColor) 
               }}>
-                #{index + 1}
+                #{String(index + 1)}
               </Text>
               <RNView style={{ flex: 1 }}>
                 <Text style={{ 
@@ -276,7 +576,7 @@ export default function TournamentBracketScreen() {
                   {player.userId === uid && ' (You)'}
                 </Text>
                 <Text style={{ fontSize: 13, opacity: 0.7, marginTop: 4, fontWeight: '600' }}>
-                  {player.wins}W - {player.losses}L
+                  {String(player.wins)}W - {String(player.losses)}L
                   {player.winRate > 0 && ` • ${player.winRate.toFixed(1)}% win rate`}
                 </Text>
               </RNView>
@@ -320,7 +620,7 @@ export default function TournamentBracketScreen() {
         showsVerticalScrollIndicator={false}
       >
         {/* Logo Section */}
-        <RNView style={{ alignItems: 'center', paddingTop: 20, paddingBottom: 10, borderBottomWidth: 2, borderBottomColor, marginHorizontal: 20, marginBottom: 20 }}>
+        <RNView style={{ alignItems: 'center', paddingTop: 20, paddingBottom: 10, borderBottomWidth: 2, borderBottomColor: borderColor, marginHorizontal: 20, marginBottom: 20 }}>
           <Logo size="small" showTagline={false} />
         </RNView>
         
@@ -402,10 +702,10 @@ export default function TournamentBracketScreen() {
             </Text>
             <RNView style={{ flexDirection: 'row', justifyContent: 'space-between', alignItems: 'center', marginBottom: 6 }}>
               <Text style={{ fontSize: 16, fontWeight: '700', color: textColor }}>
-                Position: <Text style={{ color: tint, fontSize: 20 }}>#{userPosition}</Text>
+                Position: <Text style={{ color: tint, fontSize: 20 }}>#{String(userPosition)}</Text>
               </Text>
               <Text style={{ fontSize: 16, fontWeight: '700', color: textColor }}>
-                {userStats.wins}W - {userStats.losses}L
+                {String(userStats.wins)}W - {String(userStats.losses)}L
               </Text>
             </RNView>
             {userStats.winRate > 0 && (
@@ -415,7 +715,7 @@ export default function TournamentBracketScreen() {
             )}
             {userMatches.length > 0 && (
               <Text style={{ fontSize: 14, opacity: 0.7, marginTop: 8, fontWeight: '600' }}>
-                Your Matches: {userMatches.filter(m => m.status === 'pending').length} upcoming, {userMatches.filter(m => m.status === 'completed').length} completed
+                Your Matches: {String(userMatches.filter(m => m.status === 'pending').length)} upcoming, {String(userMatches.filter(m => m.status === 'completed').length)} completed
               </Text>
             )}
           </View>
@@ -443,7 +743,7 @@ export default function TournamentBracketScreen() {
               {userMatches.length > 0 && (
                 <TouchableOpacity
                   onPress={() => {
-                    // Filter to show only user matches - we'll implement this with state
+                    // Filter to show only user matches - I'll implement this with state
                     const filtered = bracket?.matches.filter(m => m.player1Id === uid || m.player2Id === uid) || [];
                     // For now, just scroll to first user match
                   }}
@@ -457,7 +757,7 @@ export default function TournamentBracketScreen() {
                   }}
                 >
                   <Text style={{ fontSize: 12, fontWeight: '700', color: '#FFFFFF' }}>
-                    My Matches ({userMatches.length})
+                    My Matches ({String(userMatches.length)})
                   </Text>
                 </TouchableOpacity>
               )}
@@ -467,25 +767,33 @@ export default function TournamentBracketScreen() {
                 <ActivityIndicator color={tint} />
               </RNView>
             ) : bracket && bracket.matches.length > 0 ? (
-              <RNView style={{ padding: 16 }}>
-                {/* Show user matches first if any */}
-                {userMatches.length > 0 && (
-                  <>
-                    <Text style={{ fontSize: 18, fontWeight: '800', marginBottom: 12, color: tint, letterSpacing: 0.3 }}>
-                      Your Matches
-                    </Text>
-                    {userMatches.map(match => renderMatch(match))}
-                    {bracket.matches.length > userMatches.length && (
+              <RNView style={{ flex: 1, minHeight: 400 }}>
+                {isBracketTournament ? (
+                  // Show bracket tree for bracket tournaments
+                  renderBracketTree()
+                ) : (
+                  // Show list view for other tournament types
+                  <RNView style={{ padding: 16 }}>
+                    {/* Show user matches first if any */}
+                    {userMatches.length > 0 && (
                       <>
-                        <Text style={{ fontSize: 18, fontWeight: '800', marginTop: 16, marginBottom: 12, letterSpacing: 0.3 }}>
-                          All Matches
+                        <Text style={{ fontSize: 18, fontWeight: '800', marginBottom: 12, color: tint, letterSpacing: 0.3 }}>
+                          Your Matches
                         </Text>
-                        {bracket.matches.filter(m => !(m.player1Id === uid || m.player2Id === uid)).map(match => renderMatch(match))}
+                        {userMatches.map(match => renderMatch(match))}
+                        {bracket.matches.length > userMatches.length && (
+                          <>
+                            <Text style={{ fontSize: 18, fontWeight: '800', marginTop: 16, marginBottom: 12, letterSpacing: 0.3 }}>
+                              All Matches
+                            </Text>
+                            {bracket.matches.filter(m => !(m.player1Id === uid || m.player2Id === uid)).map(match => renderMatch(match))}
+                          </>
+                        )}
                       </>
                     )}
-                  </>
+                    {userMatches.length === 0 && bracket.matches.map(match => renderMatch(match))}
+                  </RNView>
                 )}
-                {userMatches.length === 0 && bracket.matches.map(match => renderMatch(match))}
               </RNView>
             ) : (
               <RNView style={{ padding: 20, alignItems: 'center' }}>

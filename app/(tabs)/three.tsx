@@ -1,9 +1,21 @@
-// My Badges Tab Screen
-// Placeholder screen for future badges/achievements feature
+/**
+ * My Badges Tab Screen
+ * This is just a placeholder screen for a future badges/achievements feature.
+ * Currently, it just displays "Storage" as a placeholder.
+ * This screen is part of the bottom tab navigation and can be expanded
+ * in the future to show user achievements, badges, or other gamification features.
+ * References:
+ * - React Native SafeAreaView: https://reactnative.dev/docs/safeareaview
+ * - React Native StyleSheet: https://reactnative.dev/docs/stylesheet
+ */
 
 import React from 'react';
 import { SafeAreaView, StyleSheet, Text } from 'react-native';
 
+/**
+ * Tab Three Screen Component
+ * This is a simple placeholder component that will be expanded in the future.
+ */
 export default function TabTwoScreen() {
   return (
     <SafeAreaView style={styles.container}>
@@ -12,7 +24,10 @@ export default function TabTwoScreen() {
   );
 }
 
-// Styles for the badges screen
+/**
+ * Styles for the Badges Screen
+ * React Native StyleSheet docs: https://reactnative.dev/docs/stylesheet
+ */
 const styles = StyleSheet.create({
   safeArea: {
     flex: 1,
@@ -20,8 +35,8 @@ const styles = StyleSheet.create({
   },
   container: {
     flex: 1,
-    alignItems: 'center',
-    justifyContent: 'center',
+    alignItems: 'center', // Center horizontally
+    justifyContent: 'center', // Center vertically
     padding: 20,
     backgroundColor: '#FFFFFF',
   },

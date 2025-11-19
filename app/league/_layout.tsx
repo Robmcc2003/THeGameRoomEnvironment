@@ -4,7 +4,6 @@ export default function LeagueLayout() {
   return (
     <Stack
       screenOptions={{
-        headerBackTitleVisible: false,
         headerBackButtonDisplayMode: 'minimal',
       }}
     >

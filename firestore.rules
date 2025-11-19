@@ -1,46 +1,135 @@
+/**
+ * Firestore Security Rules
+ * 
+ * These rules control who can read and write data in your Firestore database.
+ * They act as a security layer - even if someone tries to access your database directly,
+ * these rules will block unauthorized access.
+ * 
+ * IMPORTANT: These rules run on Firebase servers, not in your app code.
+ * They check every database request before allowing it.
+ * 
+ * Rule Structure:
+ * - match /collection/{documentId} - Defines rules for a specific collection
+ * - allow read - Who can read documents
+ * - allow create - Who can create new documents
+ * - allow update - Who can update existing documents
+ * - allow delete - Who can delete documents
+ * 
+ * Reference: https://firebase.google.com/docs/firestore/security/get-started
+ */
+
+// Specify we're using version 2 of the rules language
 rules_version = '2';
+
+// All rules are defined within the cloud.firestore service
 service cloud.firestore {
+  // Match all databases (you typically only have one)
   match /databases/{database}/documents {
     
-    // Helper function to check if user is authenticated
+    /**
+     * Helper Function: Check if User is Authenticated
+     * 
+     * This function checks if someone is currently signed in.
+     * request.auth contains the authentication information.
+     * If it's null, no one is signed in.
+     * 
+     * Reference: https://firebase.google.com/docs/firestore/security/rules-conditions#authentication
+     */
     function isAuthenticated() {
-      return request.auth != null;
+      return request.auth != null; // Returns true if user is signed in
     }
     
-    // Helper function to get current user ID
+    /**
+     * Helper Function: Get Current User ID
+     * 
+     * This function gets the unique ID of the currently signed-in user.
+     * Every user has a unique UID (User ID) when they sign up.
+     * 
+     * Reference: https://firebase.google.com/docs/firestore/security/rules-conditions#access_other_documents
+     */
     function currentUserId() {
-      return request.auth.uid;
+      return request.auth.uid; // Returns the user's unique ID
     }
     
-    // Users collection - users can read/write their own profile
+    /**
+     * Users Collection Rules
+     * 
+     * This collection stores user profiles (username, email, etc.)
+     * 
+     * Rules:
+     * - Anyone can read user documents (needed to check if username is taken during signup)
+     * - Users can only create/update/delete their own profile
+     * 
+     * Reference: https://firebase.google.com/docs/firestore/security/rules-conditions#data_validation
+     */
     match /users/{userId} {
-      allow read: if isAuthenticated();
+      // Allow anyone to read user documents
+      // This is needed so users can check if a username is available before signing up
+      // (they're not authenticated yet at that point)
+      allow read: if true;
+      
+      // Users can only create their own profile (userId must match their auth ID)
       allow create: if isAuthenticated() && userId == currentUserId();
+      
+      // Users can only update their own profile
       allow update: if isAuthenticated() && userId == currentUserId();
+      
+      // Users can only delete their own profile
       allow delete: if isAuthenticated() && userId == currentUserId();
     }
     
-    // Leagues collection
+    /**
+     * Leagues Collection Rules
+     * 
+     * This collection stores tournament/league information.
+     * 
+     * Rules:
+     * - Any authenticated user can read leagues (to browse available tournaments)
+     * - Only the owner can create a league
+     * - Only the owner or admins can update/delete a league
+     * 
+     * Reference: https://firebase.google.com/docs/firestore/security/rules-conditions#resource_data
+     */
     match /leagues/{leagueId} {
-      // Anyone authenticated can read leagues
+      // Any signed-in user can read leagues (to see what tournaments are available)
       allow read: if isAuthenticated();
       
-      // Only owners can create/update/delete their leagues
+      // Only the person creating the league can set themselves as owner
+      // request.resource.data is the data being written
       allow create: if isAuthenticated() && request.resource.data.ownerId == currentUserId();
+      
+      // Only the owner or admins can update a league
+      // resource.data is the existing data in the database
       allow update: if isAuthenticated() && 
         (resource.data.ownerId == currentUserId() || 
          currentUserId() in resource.data.get('admins', []));
+      
+      // Only the owner can delete a league
       allow delete: if isAuthenticated() && resource.data.ownerId == currentUserId();
     }
     
-    // League Members collection
+    /**
+     * League Members Collection Rules
+     * 
+     * This collection tracks who has joined each league/tournament.
+     * 
+     * Rules:
+     * - Any authenticated user can read members (to see who's in a tournament)
+     * - Users can add themselves to a league (self-join)
+     * - League owners/admins can add anyone to their league
+     * - Users can update/delete their own membership
+     * - Owners/admins can update/delete any membership
+     * 
+     * Reference: https://firebase.google.com/docs/firestore/security/rules-conditions#access_other_documents
+     */
     match /leagueMembers/{memberId} {
-      // Members can read members of leagues they're in
-      allow read: if isAuthenticated() && 
-        (resource.data.userId == currentUserId() || 
-         exists(/databases/$(database)/documents/leagues/$(resource.data.leagueId)));
+      // Any signed-in user can read league members
+      // This is needed to check if someone is already a member, count participants, etc.
+      allow read: if isAuthenticated();
       
-      // Can create if adding yourself or if you're admin/owner of the league
+      // Users can create a membership if:
+      // 1. They're adding themselves (self-join), OR
+      // 2. They're an owner/admin of the league
       allow create: if isAuthenticated() && (
         request.resource.data.userId == currentUserId() ||
         (exists(/databases/$(database)/documents/leagues/$(request.resource.data.leagueId)) &&
@@ -48,7 +137,7 @@ service cloud.firestore {
           currentUserId() in get(/databases/$(database)/documents/leagues/$(request.resource.data.leagueId)).data.get('admins', [])))
       );
       
-      // Can update if you're the member or admin/owner
+      // Users can update if they're the member themselves, or if they're owner/admin
       allow update: if isAuthenticated() && (
         resource.data.userId == currentUserId() ||
         (exists(/databases/$(database)/documents/leagues/$(resource.data.leagueId)) &&
@@ -56,7 +145,7 @@ service cloud.firestore {
           currentUserId() in get(/databases/$(database)/documents/leagues/$(resource.data.leagueId)).data.get('admins', [])))
       );
       
-      // Can delete if you're the member or admin/owner
+      // Users can delete if they're the member themselves, or if they're owner/admin
       allow delete: if isAuthenticated() && (
         resource.data.userId == currentUserId() ||
         (exists(/databases/$(database)/documents/leagues/$(resource.data.leagueId)) &&
@@ -65,59 +154,88 @@ service cloud.firestore {
       );
     }
     
-    // League Invites collection
+    /**
+     * League Invites Collection Rules
+     * 
+     * This collection stores invitations to join leagues (for users who haven't signed up yet).
+     * 
+     * Rules:
+     * - Any authenticated user can read invites
+     * - Only league owners/admins can create/update/delete invites
+     * 
+     * Reference: https://firebase.google.com/docs/firestore/security/rules-conditions#access_other_documents
+     */
     match /leagueInvites/{inviteId} {
-      // Can read invites for leagues you manage or if the invite is for your email
+      // Any signed-in user can read invites
       allow read: if isAuthenticated();
       
-      // Can create invites if you're admin/owner of the league
+      // Only owners/admins can create invites
+      // First check that the league exists, then check if user is owner/admin
       allow create: if isAuthenticated() && 
         exists(/databases/$(database)/documents/leagues/$(request.resource.data.leagueId)) &&
         (get(/databases/$(database)/documents/leagues/$(request.resource.data.leagueId)).data.ownerId == currentUserId() ||
          currentUserId() in get(/databases/$(database)/documents/leagues/$(request.resource.data.leagueId)).data.get('admins', []));
       
-      // Can update if you're admin/owner
+      // Only owners/admins can update invites
       allow update: if isAuthenticated() && 
         exists(/databases/$(database)/documents/leagues/$(resource.data.leagueId)) &&
         (get(/databases/$(database)/documents/leagues/$(resource.data.leagueId)).data.ownerId == currentUserId() ||
          currentUserId() in get(/databases/$(database)/documents/leagues/$(resource.data.leagueId)).data.get('admins', []));
       
-      // Can delete if you're admin/owner
+      // Only owners/admins can delete invites
       allow delete: if isAuthenticated() && 
         exists(/databases/$(database)/documents/leagues/$(resource.data.leagueId)) &&
         (get(/databases/$(database)/documents/leagues/$(resource.data.leagueId)).data.ownerId == currentUserId() ||
          currentUserId() in get(/databases/$(database)/documents/leagues/$(resource.data.leagueId)).data.get('admins', []));
     }
     
-    // Tournament Matches collection
+    /**
+     * Tournament Matches Collection Rules
+     * 
+     * This collection stores individual matches in tournaments (who played who, scores, winners, etc.).
+     * 
+     * Rules:
+     * - Any authenticated user can read matches (to view brackets)
+     * - Only league owners/admins can create/update/delete matches
+     * 
+     * Reference: https://firebase.google.com/docs/firestore/security/rules-conditions#access_other_documents
+     */
     match /tournamentMatches/{matchId} {
-      // Can read matches if authenticated and the league exists
-      // Note: For queries, we allow reading if league exists. More granular control
-      // can be added later if needed by checking membership in the app code.
-      allow read: if isAuthenticated() && 
-        exists(/databases/$(database)/documents/leagues/$(resource.data.leagueId));
+      // Any signed-in user can read matches
+      // This is needed so everyone can view the tournament bracket
+      allow read: if isAuthenticated();
       
-      // Can create matches if you're admin/owner of the league
+      // Only owners/admins can create matches
+      // This prevents random users from creating fake matches
       allow create: if isAuthenticated() && 
         exists(/databases/$(database)/documents/leagues/$(request.resource.data.leagueId)) &&
         (get(/databases/$(database)/documents/leagues/$(request.resource.data.leagueId)).data.ownerId == currentUserId() ||
          currentUserId() in get(/databases/$(database)/documents/leagues/$(request.resource.data.leagueId)).data.get('admins', []));
       
-      // Can update matches if you're admin/owner of the league
+      // Only owners/admins can update matches (e.g., to record scores)
       allow update: if isAuthenticated() && 
         exists(/databases/$(database)/documents/leagues/$(resource.data.leagueId)) &&
         (get(/databases/$(database)/documents/leagues/$(resource.data.leagueId)).data.ownerId == currentUserId() ||
          currentUserId() in get(/databases/$(database)/documents/leagues/$(resource.data.leagueId)).data.get('admins', []));
       
-      // Can delete matches if you're admin/owner of the league
+      // Only owners/admins can delete matches
       allow delete: if isAuthenticated() && 
         exists(/databases/$(database)/documents/leagues/$(resource.data.leagueId)) &&
         (get(/databases/$(database)/documents/leagues/$(resource.data.leagueId)).data.ownerId == currentUserId() ||
          currentUserId() in get(/databases/$(database)/documents/leagues/$(resource.data.leagueId)).data.get('admins', []));
     }
     
-    // Todos collection (if still in use)
+    /**
+     * Todos Collection Rules (Legacy/Unused)
+     * 
+     * This collection appears to be leftover from an earlier version of the app.
+     * It's kept here for backward compatibility, but may not be actively used.
+     * 
+     * Rules:
+     * - Users can only read/create/update/delete their own todos
+     */
     match /todos/{todoId} {
+      // Users can only access their own todos
       allow read: if isAuthenticated() && resource.data.userId == currentUserId();
       allow create: if isAuthenticated() && request.resource.data.userId == currentUserId();
       allow update: if isAuthenticated() && resource.data.userId == currentUserId();
@@ -125,4 +243,3 @@ service cloud.firestore {
     }
   }
 }
-

@@ -22,7 +22,7 @@ export default function TabLayout() {
   return (
     <Tabs
       screenOptions={{
-        tabBarActiveTintColor: Colors[colorScheme ?? 'light'].tint, // Red color for active tab
+        tabBarActiveTintColor: Colors[colorScheme ?? 'light'].tint, // Red colour for active tab
         headerShown: false, // Hide header on all tab screens
       }}>
       {/* Tab 1: Sign Out screen */}

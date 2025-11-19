@@ -1,70 +1,113 @@
-// Root layout file - handles app-wide navigation and authentication state
-// This is the main entry point for navigation in the app
+// Root Layout File
+// This is the main entry point for navigation in the app.
+// It handles:
+// - App-wide navigation structure
+// - Authentication state management
+// - Theme (light/dark mode) setup
+// - Font loading
+// - Splash screen management
+// This file uses Expo Router's file-based routing system.
+// The file structure in the app/ directory determines the navigation structure.
+// References:
+// - Expo Router: https://docs.expo.dev/router/introduction/
+// - Expo Fonts: https://docs.expo.dev/guides/using-custom-fonts/
+// - Expo Splash Screen: https://docs.expo.dev/guides/splash-screens/
+// - React Navigation: https://reactnavigation.org/
+// - Firebase Auth State: https://firebase.google.com/docs/auth/web/manage-users#get_the_currently_signed-in_user
 
 import FontAwesome from '@expo/vector-icons/FontAwesome';
 import { DarkTheme, DefaultTheme, ThemeProvider } from '@react-navigation/native';
 import { useFonts } from 'expo-font';
 import { Stack, useRouter, useSegments } from 'expo-router';
-import React, { useRef } from 'react';
 import * as SplashScreen from 'expo-splash-screen';
-import { useEffect } from 'react';
+import React, { useEffect } from 'react';
 import 'react-native-reanimated';
 import { useColorScheme } from '../components/useColorScheme';
+
 import { onAuthStateChanged } from 'firebase/auth';
 import { auth } from '../FirebaseConfig';
 
-// Export error boundary to catch navigation errors
+// Export Error Boundary
+// This catches navigation errors and prevents the app from crashing.
+// Expo Router provides this automatically.
+// Error boundaries docs: https://react.dev/reference/react/Component#catching-rendering-errors-with-an-error-boundary
 export {
   ErrorBoundary
 } from 'expo-router';
 
-// Navigation settings - set initial route to login screen
+// Nav settings
+// This sets the initial route when the app first loads.
+// I set it to 'index' which is the login screen.
+// Expo Router settings: https://docs.expo.dev/router/advanced/stack/
 export const unstable_settings = {
-  initialRouteName: 'index',
+  initialRouteName: 'index', // Start at login screen
 };
 
-// Prevent splash screen from hiding until fonts are loaded
+// Prevent Splash Screen from Auto-Hiding
+// I want to control when the splash screen hides (after fonts load).
+// This prevents the splash screen from disappearing too early.
+// Expo Splash Screen docs: https://docs.expo.dev/guides/splash-screens/
 SplashScreen.preventAutoHideAsync();
 
-// Main root layout component
+// Root Layout Component
+// This is the top-level component that wraps the entire app.
+// It handles font loading and splash screen management.
 export default function RootLayout() {
-  // Load custom fonts (SpaceMono and FontAwesome icons)
+  // useFonts() loads custom fonts for the app.
+  // I load SpaceMono font and FontAwesome icons.
+  // Expo Fonts docs: https://docs.expo.dev/guides/using-custom-fonts/
   const [loaded, error] = useFonts({
     SpaceMono: require('../assets/fonts/SpaceMono-Regular.ttf'),
-    ...FontAwesome.font,
+    ...FontAwesome.font, // FontAwesome icon fonts
   });
 
-  // If there's an error loading fonts, throw it to the error boundary
+  // If there's an error loading fonts, throw it to the error boundary.
+  // This will show an error screen instead of crashing the app.
   useEffect(() => {
     if (error) throw error;
   }, [error]);
 
-  // Hide splash screen once fonts are loaded
+  // Once fonts are loaded, I hide the splash screen.
+  // This ensures fonts are ready before showing the app.
   useEffect(() => {
     if (loaded) {
       SplashScreen.hideAsync();
     }
   }, [loaded]);
 
-  // Don't render anything until fonts are loaded
+  // I return null while fonts are loading to prevent
+  // the app from rendering with default fonts and then switching.
   if (!loaded) {
     return null;
   }
 
+  // Once fonts are loaded, render the navigation component
   return <RootLayoutNav />;
 }
 
-// Navigation component that handles routing and authentication
+// This component handles routing and authentication state.
+// It listens for auth changes and redirects users appropriately.
 function RootLayoutNav() {
-  const colorScheme = useColorScheme(); // Get device color scheme (light/dark)
-  const router = useRouter(); // Router for navigation
-  const segments = useSegments(); // Current route segments
+  // Get device color scheme (light or dark mode)
+  const colorScheme = useColorScheme();
+  
+  // Get router for navigation
+  const router = useRouter();
+  
+  // Get current route segments (for checking which screen I'm on)
+  const segments = useSegments();
 
-  // Listen for authentication state changes
-  // When user signs in from login screen, redirect them to the tabs
+  // Listen for Authentication State Changes
+  // This effect listens for when users sign in or sign out.
+  // When a user signs in from the login screen, I redirect them to the main app.
+  // Firebase Auth state listener: https://firebase.google.com/docs/auth/web/manage-users#get_the_currently_signed-in_user
+  // React useEffect docs: https://react.dev/reference/react/useEffect
   useEffect(() => {
+    // Set up listener for authentication state changes
     const unsubscribe = onAuthStateChanged(auth, (user) => {
-      const currentSegment = segments[0]; // Get current route
+      // Get the current route (first segment)
+      const currentSegment = segments[0] as string | undefined;
+      // Check if I'm on the login screen
       const onLoginScreen = currentSegment === 'index' || !currentSegment;
       
       // If user is signed in and on login screen, redirect to main app
@@ -77,20 +120,25 @@ function RootLayoutNav() {
     return () => unsubscribe();
   }, [segments, router]);
 
-  // Render navigation stack with theme
+  // Stack provides a navigation stack (like a stack of cards).
+  // Each screen can navigate to another, and you can go back.
+  // React Navigation Stack docs: https://reactnavigation.org/docs/stack-navigator/
   return (
+    // ThemeProvider applies light/dark theme to navigation
     <ThemeProvider value={colorScheme === 'dark' ? DarkTheme : DefaultTheme}>
       <Stack
         screenOptions={{
-          headerBackButtonDisplayMode: 'minimal', // Show minimal back button
-          headerBackVisible: true, // Always show back button
+          headerBackButtonDisplayMode: 'minimal', // Show minimal back button style
+          headerBackVisible: true, // Always show back button when possible
         }}
       >
-        {/* Login screen - no header */}
+        {/* Login screen - no header (I handle my own header) */}
         <Stack.Screen name="index" options={{ headerShown: false }} />
-        {/* Main tabs screen - no header */}
+        
+        {/* Main tabs screen - no header (tabs have their own headers) */}
         <Stack.Screen name="(tabs)" options={{ headerShown: false }} />
-        {/* League screens - no header (handled by league layout) */}
+        
+        {/* League screens - no header (handled by league layout file) */}
         <Stack.Screen name="league" options={{ headerShown: false }} />
       </Stack>
     </ThemeProvider>

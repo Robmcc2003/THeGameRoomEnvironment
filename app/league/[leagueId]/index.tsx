@@ -13,7 +13,7 @@ import { auth, db } from '../../../FirebaseConfig';
 import { deleteLeague } from '../../../components/lib/leagues';
 import { cancelInvite, listInvites, listMembers, removeMember, resendInvite, setMemberRole,
 } from '../../../components/lib/members';
-import { joinTournament, getTournamentBracket, getTournamentStandings } from '../../../components/lib/tournaments';
+import { joinTournament, getTournamentBracket, getTournamentStandings, generateBracketMatches, addDummyTournamentData } from '../../../components/lib/tournaments';
 
 type LeagueDoc = {
   name: string;
@@ -96,7 +96,7 @@ export default function LeagueDetailScreen() {
   const [actioningId, setActioningId] = useState<string | null>(null);
 
   const uid = auth.currentUser?.uid ?? null;
-  const isOwner = !!(uid && league?.ownerId && uid === league.ownerId);
+  const isOwner = !!(uid && league?.ownerId && String(uid) === String(league.ownerId));
   const isAdmin = !!(uid && league?.admins && Array.isArray(league.admins) && league.admins.includes(uid));
   const canManageMembers = isOwner || isAdmin;
   const isMember = !!(uid && rows.some(r => r.kind === 'member' && (r as MemberRow).userId === uid));
@@ -205,6 +205,58 @@ export default function LeagueDetailScreen() {
       setActioningId(null);
     }
   }, [leagueId, loadList, router]);
+
+  const onGenerateMatches = useCallback(async () => {
+    if (!leagueId) return;
+    try {
+      setActioningId('generate');
+      await generateBracketMatches(String(leagueId));
+      Alert.alert(
+        'Success!', 
+        'Tournament bracket matches have been generated. You can now view the bracket.',
+        [
+          { text: 'View Bracket', onPress: () => router.push({ pathname: '/league/[leagueId]/bracket', params: { leagueId: String(leagueId) } }) },
+          { text: 'OK' }
+        ]
+      );
+    } catch (e: any) {
+      Alert.alert('Could not generate matches', e?.message ?? 'Unknown error');
+    } finally {
+      setActioningId(null);
+    }
+  }, [leagueId, router]);
+
+  const onAddDummyData = useCallback(async () => {
+    if (!leagueId) return;
+    Alert.alert(
+      'Add Dummy Data?',
+      'This will add 8 dummy players and a complete tournament bracket with results. This is for testing purposes only.',
+      [
+        { text: 'Cancel', style: 'cancel' },
+        {
+          text: 'Add Data',
+          onPress: async () => {
+            try {
+              setActioningId('dummy');
+              await addDummyTournamentData(String(leagueId));
+              Alert.alert(
+                'Success!', 
+                'Dummy tournament data has been added. You can now view the bracket.',
+                [
+                  { text: 'View Bracket', onPress: () => router.push({ pathname: '/league/[leagueId]/bracket', params: { leagueId: String(leagueId) } }) },
+                  { text: 'OK' }
+                ]
+              );
+            } catch (e: any) {
+              Alert.alert('Could not add dummy data', e?.message ?? 'Unknown error');
+            } finally {
+              setActioningId(null);
+            }
+          }
+        }
+      ]
+    );
+  }, [leagueId, router]);
 
   // ACTION HANDLERS 
   const onCancelInvite = async (emailLower: string) => {
@@ -319,13 +371,13 @@ export default function LeagueDetailScreen() {
                 <Text><Text style={{ fontWeight: '700' }}>Format: </Text><Text style={{ opacity: 0.8, textTransform: 'capitalize' }}>{league.tournamentFormat.replace(/_/g, ' ')}</Text></Text>
               ) : null}
               {league.numberOfRounds ? (
-                <Text><Text style={{ fontWeight: '700' }}>Number of Rounds: </Text><Text style={{ opacity: 0.8 }}>{league.numberOfRounds}</Text></Text>
+                <Text><Text style={{ fontWeight: '700' }}>Number of Rounds: </Text><Text style={{ opacity: 0.8 }}>{String(league.numberOfRounds)}</Text></Text>
               ) : null}
               {league.maxParticipants ? (
-                <Text><Text style={{ fontWeight: '700' }}>Max Participants: </Text><Text style={{ opacity: 0.8 }}>{league.maxParticipants}</Text></Text>
+                <Text><Text style={{ fontWeight: '700' }}>Max Participants: </Text><Text style={{ opacity: 0.8 }}>{String(league.maxParticipants)}</Text></Text>
               ) : null}
               {league.matchDuration ? (
-                <Text><Text style={{ fontWeight: '700' }}>Match Duration: </Text><Text style={{ opacity: 0.8 }}>{league.matchDuration} minutes</Text></Text>
+                <Text><Text style={{ fontWeight: '700' }}>Match Duration: </Text><Text style={{ opacity: 0.8 }}>{String(league.matchDuration)} minutes</Text></Text>
               ) : null}
               {league.rules ? (
                 <RNView style={{ marginTop: 4 }}>
@@ -444,15 +496,69 @@ export default function LeagueDetailScreen() {
               </TouchableOpacity>
             ) : null}
           </RNView>
+          {/* Generate Matches button (for owners/admins of bracket tournaments) */}
+          {canManageMembers && league && (league.tournamentFormat === 'single_elimination' || league.tournamentFormat === 'double_elimination') && (
+            <TouchableOpacity
+              onPress={onGenerateMatches}
+              disabled={!!actioningId}
+              style={{
+                paddingVertical: 12,
+                paddingHorizontal: 16,
+                borderRadius: 10,
+                borderWidth: 2,
+                borderColor: borderColor,
+                backgroundColor: cardBg,
+                alignItems: 'center',
+                opacity: actioningId === 'generate' ? 0.7 : 1,
+              }}
+            >
+              {actioningId === 'generate' ? (
+                <RNView style={{ flexDirection: 'row', alignItems: 'center', gap: 8 }}>
+                  <ActivityIndicator size="small" color={tint} />
+                  <Text style={{ color: textColor, fontWeight: '700', fontSize: 16 }}>Generating Matches...</Text>
+                </RNView>
+              ) : (
+                <Text style={{ color: textColor, fontWeight: '700', fontSize: 16 }}>Generate Bracket Matches</Text>
+              )}
+            </TouchableOpacity>
+          )}
+
+          {/* Add Dummy Data Button (for testing) */}
+          {canManageMembers && (
+            <TouchableOpacity
+              onPress={onAddDummyData}
+              disabled={!!actioningId}
+              style={{
+                paddingVertical: 12,
+                paddingHorizontal: 16,
+                borderRadius: 10,
+                borderWidth: 2,
+                borderColor: borderColor,
+                backgroundColor: cardBg,
+                alignItems: 'center',
+                marginTop: 12,
+                opacity: actioningId === 'dummy' ? 0.7 : 1,
+              }}
+            >
+              {actioningId === 'dummy' ? (
+                <RNView style={{ flexDirection: 'row', alignItems: 'center', gap: 8 }}>
+                  <ActivityIndicator size="small" color={tint} />
+                  <Text style={{ color: textColor, fontWeight: '700', fontSize: 16 }}>Adding Dummy Data...</Text>
+                </RNView>
+              ) : (
+                <Text style={{ color: textColor, fontWeight: '700', fontSize: 16 }}>Add Dummy Tournament Data</Text>
+              )}
+            </TouchableOpacity>
+          )}
         </View>
 
         {/* Members header row */}
         <RNView style={{ borderRadius: 16, borderWidth: 2, borderColor, backgroundColor: cardBg, padding: 18, paddingBottom: 10 }}>
           <RNView style={{ flexDirection: 'row', alignItems: 'center', justifyContent: 'space-between' }}>
             <Text style={{ fontSize: 18, fontWeight: '700' }}>
-              Members <Text style={{ opacity: 0.6, fontSize: 14 }}>({rows.filter(r => r.kind === 'member').length})</Text>
+              Members <Text style={{ opacity: 0.6, fontSize: 14 }}>({String(rows.filter(r => r.kind === 'member').length)})</Text>
               {rows.some(r => r.kind === 'invite') ? (
-                <Text style={{ opacity: 0.6, fontSize: 14 }}>{'  •  Invited '}{rows.filter(r => r.kind === 'invite').length}</Text>
+                <Text style={{ opacity: 0.6, fontSize: 14 }}>{'  •  Invited '}{String(rows.filter(r => r.kind === 'invite').length)}</Text>
               ) : null}
             </Text>
             {canManageMembers ? (
@@ -466,7 +572,7 @@ export default function LeagueDetailScreen() {
         </RNView>
       </RNView>
     );
-  }, [league, borderColor, cardBg, colorScheme, canManageMembers, goToAddMember, rows, isMember, uid, tint, textColor, actioningId, onJoinTournament, goToBracket]);
+  }, [league, borderColor, cardBg, colorScheme, canManageMembers, goToAddMember, rows, isMember, uid, tint, textColor, actioningId, onJoinTournament, goToBracket, onGenerateMatches]);
 
   const ActionButton = ({
     label,
@@ -590,7 +696,7 @@ export default function LeagueDetailScreen() {
     ),
     headerRight: () => (
       <RNView style={{ flexDirection: 'row' }}>
-        {uid === league.ownerId ? (
+        {uid && league.ownerId && String(uid) === String(league.ownerId) ? (
           <>
             <TouchableOpacity
               style={{ paddingHorizontal: 12, paddingVertical: 6 }}

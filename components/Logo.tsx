@@ -1,18 +1,33 @@
 // Logo Component
-// Displays "THE GAME ROOM" logo with a video game controller icon
-// Can be displayed in different sizes with optional tagline
+// This component displays "THE GAME ROOM" logo with a stylized video game controller icon.
+// It can be displayed in different sizes (small, medium, large) with an optional tagline.
+// The logo consists of:
+// - Top text: "THE GAME ROOM"
+// - Controller icon: A custom-designed game controller made with React Native Views
+// - Bottom text: "FROM LIVING ROOMS TO LEAGUES" (optional tagline)
+// React Native Components Used:
+// - View: Container for layout
+// - Text: Text display
+// - StyleSheet: For styling
+// References:
+// - React Native Components: https://reactnative.dev/docs/components-and-apis
+// - React Native StyleSheet: https://reactnative.dev/docs/stylesheet
 
 import React from 'react';
 import { View, StyleSheet, Text } from 'react-native';
 
-// Props for the Logo component
+// Logo Component Props
+// These are the properties that can be passed to the Logo component.
 type LogoProps = {
-  size?: 'small' | 'medium' | 'large'; // Size of the logo
-  showTagline?: boolean; // Whether to show "FROM LIVING ROOMS TO LEAGUES" tagline
+  size?: 'small' | 'medium' | 'large'; // Size of the logo (default: 'medium')
+  showTagline?: boolean; // Whether to show "FROM LIVING ROOMS TO LEAGUES" tagline (default: true)
 };
 
+// Logo Component
+// This is the main logo component that displays the app branding.
+// @param size - Size variant of the logo
+// @param showTagline - Whether to display the tagline
 export default function Logo({ size = 'medium', showTagline = true }: LogoProps) {
-  // Define sizes for different logo variants
   const sizes = {
     small: { fontSize: 14, taglineSize: 10, controllerSize: 80 },
     medium: { fontSize: 20, taglineSize: 14, controllerSize: 100 },
@@ -20,6 +35,13 @@ export default function Logo({ size = 'medium', showTagline = true }: LogoProps)
   };
 
   const { fontSize, taglineSize, controllerSize } = sizes[size];
+  const controllerHeight = controllerSize * 0.7;
+  
+  // Calculate positions based on controller dimensions
+  const handleWidth = controllerSize * 0.25;
+  const handleHeight = controllerHeight * 0.6;
+  const bodyWidth = controllerSize * 0.7;
+  const bodyHeight = controllerHeight * 0.7;
 
   return (
     <View style={styles.container}>
@@ -27,37 +49,124 @@ export default function Logo({ size = 'medium', showTagline = true }: LogoProps)
         {/* Top Text - "THE GAME ROOM" */}
         <Text style={[styles.topText, { fontSize }]}>THE GAME ROOM</Text>
 
-        {/* Controller Icon - Stylized video game controller */}
-        <View style={[styles.controllerContainer, { width: controllerSize, height: controllerSize * 0.7 }]}>
+        {/* Controller Icon - Stylized Video Game Controller */}
+        {/* I create a controller using nested Views to simulate the controller shape.
+            This is a custom design made with React Native components.
+            The controller has:
+            - Left and right handles (grips)
+            - Controller body (main section)
+            - D-pad (directional pad) on the left
+            - Center buttons (menu/start) in the middle
+            - Action buttons (A, B, X, Y) on the right */}
+        <View style={[styles.controllerContainer, { width: controllerSize, height: controllerHeight }]}>
           <View style={styles.controller}>
-            {/* Left handle */}
-            <View style={[styles.handle, styles.leftHandle]} />
-            {/* Right handle */}
-            <View style={[styles.handle, styles.rightHandle]} />
-            {/* Controller body */}
-            <View style={styles.controllerBody}>
-              {/* D-pad (directional pad) on left */}
-              <View style={styles.dpad}>
-                <View style={styles.dpadVertical} />
-                <View style={styles.dpadHorizontal} />
+            <View style={[
+              styles.handle,
+              {
+                width: handleWidth,
+                height: handleHeight,
+                left: -controllerSize * 0.12,
+                top: controllerHeight * 0.2,
+              }
+            ]} />
+            
+            <View style={[
+              styles.handle,
+              {
+                width: handleWidth,
+                height: handleHeight,
+                right: -controllerSize * 0.12,
+                top: controllerHeight * 0.2,
+              }
+            ]} />
+            
+            <View style={[styles.controllerBody, { width: bodyWidth, height: bodyHeight }]}>
+              <View style={[
+                styles.dpad,
+                {
+                  left: bodyWidth * 0.08,
+                  top: bodyHeight * 0.3,
+                  width: bodyWidth * 0.2,
+                  height: bodyHeight * 0.2,
+                }
+              ]}>
+                <View style={[
+                  styles.dpadVertical,
+                  {
+                    width: bodyWidth * 0.15,
+                    height: bodyHeight * 0.6,
+                  }
+                ]} />
+                <View style={[
+                  styles.dpadHorizontal,
+                  {
+                    width: bodyWidth * 0.6,
+                    height: bodyHeight * 0.15,
+                  }
+                ]} />
               </View>
-              {/* Center buttons (menu/start) */}
-              <View style={styles.centerButtons}>
+              
+              <View style={[
+                styles.centerButtons,
+                {
+                  bottom: bodyHeight * 0.12,
+                }
+              ]}>
                 <View style={styles.centerButton} />
                 <View style={styles.centerButton} />
               </View>
-              {/* Action buttons (A, B, X, Y) on right */}
-              <View style={styles.actionButtons}>
-                <View style={[styles.actionButton, styles.actionButtonTop]} />
-                <View style={[styles.actionButton, styles.actionButtonRight]} />
-                <View style={[styles.actionButton, styles.actionButtonBottom]} />
-                <View style={[styles.actionButton, styles.actionButtonLeft]} />
+              
+              <View style={[
+                styles.actionButtons,
+                {
+                  right: bodyWidth * 0.08,
+                  top: bodyHeight * 0.25,
+                  width: bodyWidth * 0.24,
+                  height: bodyHeight * 0.24,
+                }
+              ]}>
+                <View style={[
+                  styles.actionButton,
+                  {
+                    width: bodyWidth * 0.24 * 0.3,
+                    height: bodyHeight * 0.24 * 0.3,
+                    top: 0,
+                    left: bodyWidth * 0.24 * 0.35,
+                  }
+                ]} />
+                <View style={[
+                  styles.actionButton,
+                  {
+                    width: bodyWidth * 0.24 * 0.3,
+                    height: bodyHeight * 0.24 * 0.3,
+                    right: 0,
+                    top: bodyHeight * 0.24 * 0.35,
+                  }
+                ]} />
+                <View style={[
+                  styles.actionButton,
+                  {
+                    width: bodyWidth * 0.24 * 0.3,
+                    height: bodyHeight * 0.24 * 0.3,
+                    bottom: 0,
+                    left: bodyWidth * 0.24 * 0.35,
+                  }
+                ]} />
+                <View style={[
+                  styles.actionButton,
+                  {
+                    width: bodyWidth * 0.24 * 0.3,
+                    height: bodyHeight * 0.24 * 0.3,
+                    left: 0,
+                    top: bodyHeight * 0.24 * 0.35,
+                  }
+                ]} />
               </View>
             </View>
           </View>
         </View>
 
-        {/* Bottom Text - "FROM LIVING ROOMS TO LEAGUES" tagline */}
+        {/* Bottom Text - Tagline (optional) */}
         {showTagline && (
           <Text style={[styles.bottomText, { fontSize: taglineSize }]}>
             FROM LIVING ROOMS TO LEAGUES
@@ -68,136 +177,98 @@ export default function Logo({ size = 'medium', showTagline = true }: LogoProps)
   );
 }
 
-// Styles for the logo component
+// Styles for the Logo Component
+// These styles create the visual appearance of the logo.
+// The controller is built using absolute positioning to layer Views on top of each other.
+// React Native StyleSheet docs: https://reactnative.dev/docs/stylesheet
 const styles = StyleSheet.create({
   container: {
-    alignItems: 'center',
-    justifyContent: 'center',
+    alignItems: 'center', // Center horizontally
+    justifyContent: 'center', // Center vertically
   },
   logoContainer: {
     alignItems: 'center',
     justifyContent: 'center',
-    position: 'relative',
+    position: 'relative', // Allows absolute positioning of child elements
   },
   topText: {
-    fontWeight: '900',
-    color: '#DC143C', // Red color
-    letterSpacing: 2,
+    fontWeight: '900', // Extra bold
+    color: '#DC143C', // Red color (Crimson)
+    letterSpacing: 2, // Space between letters
     marginBottom: 8,
     textAlign: 'center',
   },
   bottomText: {
-    fontWeight: '700',
+    fontWeight: '700', // Bold
     color: '#DC143C', // Red color
-    letterSpacing: 1.5,
+    letterSpacing: 1.5, // Space between letters
     marginTop: 8,
     textAlign: 'center',
   },
   controllerContainer: {
     alignItems: 'center',
     justifyContent: 'center',
-    marginVertical: 12,
+    marginVertical: 12, // Margin top and bottom
   },
   controller: {
     width: '100%',
     height: '100%',
-    position: 'relative',
+    position: 'relative', // Allows absolute positioning of handles
     alignItems: 'center',
     justifyContent: 'center',
   },
   controllerBody: {
-    width: '70%',
-    height: '70%',
+    width: '70%', // Controller body is 70% of container width
+    height: '70%', // Controller body is 70% of container height
     backgroundColor: '#DC143C', // Red controller body
-    borderRadius: 12,
-    position: 'relative',
+    borderRadius: 12, // Rounded corners
+    position: 'relative', // Allows absolute positioning of buttons
     alignItems: 'center',
     justifyContent: 'center',
-    borderWidth: 3,
-    borderColor: '#000000', // Black border
+    borderWidth: 3, // Thick black border
+    borderColor: '#000000',
   },
   handle: {
     position: 'absolute',
-    width: '25%',
-    height: '60%',
-    backgroundColor: '#DC143C', // Red handles
+    backgroundColor: '#DC143C',
     borderRadius: 15,
     borderWidth: 3,
-    borderColor: '#000000', // Black border
-  },
-  leftHandle: {
-    left: '-12%',
-    top: '20%',
-  },
-  rightHandle: {
-    right: '-12%',
-    top: '20%',
+    borderColor: '#000000',
   },
   dpad: {
     position: 'absolute',
-    left: '8%',
-    top: '30%',
-    width: '20%',
-    height: '20%',
-    backgroundColor: '#FFFFFF', // White D-pad
+    backgroundColor: '#FFFFFF',
     borderRadius: 12,
     alignItems: 'center',
     justifyContent: 'center',
   },
   dpadVertical: {
     position: 'absolute',
-    width: '15%',
-    height: '60%',
-    backgroundColor: '#DC143C', // Red cross
+    backgroundColor: '#DC143C',
     borderRadius: 2,
   },
   dpadHorizontal: {
     position: 'absolute',
-    width: '60%',
-    height: '15%',
-    backgroundColor: '#DC143C', // Red cross
+    backgroundColor: '#DC143C',
     borderRadius: 2,
   },
   centerButtons: {
     position: 'absolute',
-    bottom: '12%',
     flexDirection: 'row',
     gap: 8,
   },
   centerButton: {
     width: 6,
     height: 2,
-    backgroundColor: '#FFFFFF', // White buttons
+    backgroundColor: '#FFFFFF',
     borderRadius: 1,
   },
   actionButtons: {
     position: 'absolute',
-    right: '8%',
-    top: '25%',
-    width: '24%',
-    height: '24%',
   },
   actionButton: {
     position: 'absolute',
-    width: '30%',
-    height: '30%',
-    backgroundColor: '#FFFFFF', // White buttons
+    backgroundColor: '#FFFFFF',
     borderRadius: 4,
-  },
-  actionButtonTop: {
-    top: 0,
-    left: '35%',
-  },
-  actionButtonRight: {
-    right: 0,
-    top: '35%',
-  },
-  actionButtonBottom: {
-    bottom: 0,
-    left: '35%',
-  },
-  actionButtonLeft: {
-    left: 0,
-    top: '35%',
   },
 });

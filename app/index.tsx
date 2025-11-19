@@ -1,46 +1,33 @@
-// Login and Sign Up Screen
-// This is the first screen users see when they open the app
-// Handles user authentication (sign in and sign up)
-
 import { router } from 'expo-router'
-import { createUserWithEmailAndPassword, signInWithEmailAndPassword, onAuthStateChanged } from 'firebase/auth'
+import { createUserWithEmailAndPassword, onAuthStateChanged, signInWithEmailAndPassword } from 'firebase/auth'
+import { doc, getDoc, serverTimestamp, setDoc } from 'firebase/firestore'
 import React, { useEffect, useState } from 'react'
 import { ActivityIndicator, SafeAreaView, ScrollView, StyleSheet, Text, TextInput, TouchableOpacity, View } from 'react-native'
-import { auth } from '../FirebaseConfig'
+import { auth, db } from '../FirebaseConfig'
 import Logo from '../components/Logo'
 
-// Main login component
 const index = () => {
-  // State for email and password input fields
   const [email, setEmail] = useState('');
   const [password, setPassword] = useState('');
-  
-  // Loading state - true while checking if user is already signed in
+  const [username, setUsername] = useState('');
+  const [isSignUp, setIsSignUp] = useState(false);
   const [loading, setLoading] = useState(true);
-  
-  // States to track if sign in/sign up is in progress (prevents double-clicks)
   const [signingIn, setSigningIn] = useState(false);
   const [signingUp, setSigningUp] = useState(false);
 
-  // Check if user is already signed in when screen loads
-  // If signed in, redirect to main app
+  // Check if user is already signed in
   useEffect(() => {
     const unsubscribe = onAuthStateChanged(auth, (user) => {
       if (user) {
-        // User is signed in, go to main app
         router.replace('/(tabs)');
       } else {
-        // User is not signed in, show login form
         setLoading(false);
       }
     });
-    // Clean up listener when component unmounts
     return () => unsubscribe();
   }, []);
 
-  // Handle sign in button press
   const signIn = async () => {
-    // Validate inputs
     if (!email.trim() || !password.trim()) {
       alert('Please enter both email and password');
       return;
@@ -48,30 +35,98 @@ const index = () => {
 
     try {
       setSigningIn(true);
-      // Sign in with Firebase
-      const user = await signInWithEmailAndPassword(auth, email, password);
-      if (user) {
-        // Success - redirect to main app (handled by auth state listener)
+      const userCredential = await signInWithEmailAndPassword(auth, email, password);
+      
+      if (userCredential.user) {
+        // Ensure user profile exists (for backward compatibility)
+        const userRef = doc(db, 'users', userCredential.user.uid);
+        const userSnap = await getDoc(userRef);
+        
+        if (!userSnap.exists() || !userSnap.data()?.username) {
+          const emailUsername = email.split('@')[0];
+          await setDoc(userRef, {
+            email: email.toLowerCase(),
+            emailLower: email.toLowerCase(),
+            username: userSnap.data()?.username || emailUsername,
+            displayName: userSnap.data()?.displayName || emailUsername,
+            updatedAt: serverTimestamp(),
+            ...(userSnap.exists() ? {} : { createdAt: serverTimestamp() }),
+          }, { merge: true });
+        }
+        
         router.replace('/(tabs)');
       }
     } catch (error: any) {
       console.log(error);
-      // Show error message to user
       alert('Sign in failed: ' + (error.message || 'Unknown error'));
     } finally {
       setSigningIn(false);
     }
   }
 
-  // Handle sign up button press
+  const createUserProfile = async (userId: string, email: string, username: string) => {
+    const userRef = doc(db, 'users', userId);
+    const userSnap = await getDoc(userRef);
+    
+    const userData = {
+      email: email.toLowerCase(),
+      emailLower: email.toLowerCase(),
+      username: username.trim(),
+      displayName: username.trim(),
+      createdAt: userSnap.exists() ? userSnap.data().createdAt : serverTimestamp(),
+      updatedAt: serverTimestamp(),
+    };
+
+    await setDoc(userRef, userData, { merge: true });
+  };
+
+  const checkUsernameAvailability = async (username: string): Promise<boolean> => {
+    try {
+      const { collection, query, where, getDocs } = await import('firebase/firestore');
+      const usersQuery = query(
+        collection(db, 'users'),
+        where('username', '==', username.trim())
+      );
+      const snapshot = await getDocs(usersQuery);
+      return snapshot.empty;
+    } catch (error: any) {
+      console.error('Error checking username:', error);
+      if (error?.code === 'permission-denied') {
+        console.warn('Permission denied checking username - allowing signup to proceed');
+        return true;
+      }
+      throw new Error('Unable to verify username availability. Please try again.');
+    }
+  };
+
   const signUp = async () => {
-    // Validate inputs
     if (!email.trim() || !password.trim()) {
       alert('Please enter both email and password');
       return;
     }
 
-    // Password must be at least 6 characters (Firebase requirement)
+    if (!username.trim()) {
+      alert('Please enter a username');
+      return;
+    }
+
+    const usernameTrimmed = username.trim();
+    
+    if (usernameTrimmed.length < 3) {
+      alert('Username must be at least 3 characters');
+      return;
+    }
+
+    if (usernameTrimmed.length > 20) {
+      alert('Username must be 20 characters or less');
+      return;
+    }
+
+    if (!/^[a-zA-Z0-9_]+$/.test(usernameTrimmed)) {
+      alert('Username can only contain letters, numbers, and underscores');
+      return;
+    }
+
     if (password.length < 6) {
       alert('Password must be at least 6 characters');
       return;
@@ -79,22 +134,33 @@ const index = () => {
 
     try {
       setSigningUp(true);
-      // Create new account with Firebase
-      const user = await createUserWithEmailAndPassword(auth, email, password);
-      if (user) {
-        // Success - redirect to main app (handled by auth state listener)
+      
+      try {
+        const isAvailable = await checkUsernameAvailability(usernameTrimmed);
+        if (!isAvailable) {
+          alert('This username is already taken. Please choose another.');
+          setSigningUp(false);
+          return;
+        }
+      } catch (checkError: any) {
+        console.warn('Username availability check failed:', checkError);
+        alert(checkError.message || 'Could not verify username availability. You can change it later if needed.');
+      }
+
+      const userCredential = await createUserWithEmailAndPassword(auth, email, password);
+      
+      if (userCredential.user) {
+        await createUserProfile(userCredential.user.uid, email, usernameTrimmed);
         router.replace('/(tabs)');
       }
     } catch (error: any) {
       console.log(error);
-      // Show error message to user
       alert('Sign up failed: ' + (error.message || 'Unknown error'));
     } finally {
       setSigningUp(false);
     }
   }
 
-  // Show loading screen while checking authentication
   if (loading) {
     return (
       <SafeAreaView style={styles.container}>
@@ -107,7 +173,6 @@ const index = () => {
     );
   }
 
-  // Main login form UI
   return (
     <SafeAreaView style={styles.container}>
       <ScrollView 
@@ -115,17 +180,26 @@ const index = () => {
         keyboardShouldPersistTaps="handled"
         showsVerticalScrollIndicator={false}
       >
-        {/* Logo section at top */}
         <View style={styles.logoSection}>
           <Logo size="large" showTagline={true} />
         </View>
         
-        {/* Login form section */}
         <View style={styles.formSection}>
-          <Text style={styles.title}>Welcome Back</Text>
-          <Text style={styles.subtitle}>Sign in to continue</Text>
+          <Text style={styles.title}>{isSignUp ? 'Create Account' : 'Welcome Back'}</Text>
+          <Text style={styles.subtitle}>{isSignUp ? 'Sign up to get started' : 'Sign in to continue'}</Text>
           
-          {/* Email input field */}
+          {isSignUp && (
+            <TextInput 
+              style={styles.textInput} 
+              placeholder="username" 
+              value={username} 
+              onChangeText={setUsername}
+              autoCapitalize="none"
+              placeholderTextColor="#999999"
+              maxLength={20}
+            />
+          )}
+          
           <TextInput 
             style={styles.textInput} 
             placeholder="email" 
@@ -136,41 +210,54 @@ const index = () => {
             placeholderTextColor="#999999"
           />
           
-          {/* Password input field */}
           <TextInput 
             style={styles.textInput} 
             placeholder="password" 
             value={password} 
-            onChangeText={setPassword} 
+            onChangeText={setPassword}
             secureTextEntry
             autoCapitalize="none"
             placeholderTextColor="#999999"
           />
           
-          {/* Sign in button */}
-          <TouchableOpacity 
-            style={[styles.button, signingIn && styles.buttonDisabled]} 
-            onPress={signIn}
-            disabled={signingIn || signingUp}
-          >
-            {signingIn ? (
-              <ActivityIndicator color="#FFFFFF" />
-            ) : (
-              <Text style={styles.text}>Login</Text>
-            )}
-          </TouchableOpacity>
+          {!isSignUp && (
+            <TouchableOpacity 
+              style={[styles.button, signingIn && styles.buttonDisabled]} 
+              onPress={signIn}
+              disabled={signingIn || signingUp}
+            >
+              {signingIn ? (
+                <ActivityIndicator color="#FFFFFF" />
+              ) : (
+                <Text style={styles.text}>Login</Text>
+              )}
+            </TouchableOpacity>
+          )}
           
-          {/* Sign up button */}
+          {isSignUp && (
+            <TouchableOpacity 
+              style={[styles.button, signingUp && styles.buttonDisabled]} 
+              onPress={signUp}
+              disabled={signingIn || signingUp}
+            >
+              {signingUp ? (
+                <ActivityIndicator color="#FFFFFF" />
+              ) : (
+                <Text style={styles.text}>Create Account</Text>
+              )}
+            </TouchableOpacity>
+          )}
+          
           <TouchableOpacity 
-            style={[styles.button, styles.buttonSecondary, signingUp && styles.buttonDisabled]} 
-            onPress={signUp}
-            disabled={signingIn || signingUp}
+            onPress={() => {
+              setIsSignUp(!isSignUp);
+              setUsername('');
+            }}
+            style={styles.toggleButton}
           >
-            {signingUp ? (
-              <ActivityIndicator color="#FFFFFF" />
-            ) : (
-              <Text style={styles.text}>Create Account</Text>
-            )}
+            <Text style={styles.toggleText}>
+              {isSignUp ? 'Already have an account? Sign in' : "Don't have an account? Sign up"}
+            </Text>
           </TouchableOpacity>
         </View>
       </ScrollView>
@@ -180,7 +267,6 @@ const index = () => {
 
 export default index
 
-// Styles for the login screen
 const styles = StyleSheet.create({
   container: {
     flex: 1,
@@ -238,7 +324,7 @@ const styles = StyleSheet.create({
   button: {
     width: '100%',
     marginVertical: 10,
-    backgroundColor: '#DC143C', // Red button
+    backgroundColor: '#DC143C',
     padding: 18,
     borderRadius: 12,
     alignItems: 'center',
@@ -252,16 +338,26 @@ const styles = StyleSheet.create({
     borderColor: '#000000',
   },
   buttonSecondary: {
-    backgroundColor: '#000000', // Black button
+    backgroundColor: '#000000',
     borderColor: '#DC143C',
   },
   buttonDisabled: {
-    opacity: 0.6, // Dim button when disabled
+    opacity: 0.6,
   },
   text: {
     color: '#FFFFFF',
     fontSize: 18,
     fontWeight: '700',
     letterSpacing: 0.5,
+  },
+  toggleButton: {
+    marginTop: 20,
+    paddingVertical: 12,
+  },
+  toggleText: {
+    color: '#666666',
+    fontSize: 14,
+    fontWeight: '600',
+    textDecorationLine: 'underline',
   }
 });
