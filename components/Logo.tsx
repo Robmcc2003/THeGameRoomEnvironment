@@ -10,6 +10,7 @@
 // - Text: Text display
 // - StyleSheet: For styling
 // References:
+// Created with the help of chatgpt as base of code for logo gen https://chatgpt.com/share/691da1e5-7c44-8007-9135-608c82d9689c
 // - React Native Components: https://reactnative.dev/docs/components-and-apis
 // - React Native StyleSheet: https://reactnative.dev/docs/stylesheet
 

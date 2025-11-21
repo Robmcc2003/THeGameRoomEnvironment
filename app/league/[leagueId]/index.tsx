@@ -1,20 +1,27 @@
+// League Detail Screen
+// This screen displays detailed information about a league, including tournament settings, members, and invites.
+// Owners and admins can manage members, edit settings, and generate tournament brackets.
 
-import { useLocalSearchParams, useRouter, useNavigation } from 'expo-router';
+import { useLocalSearchParams, useNavigation, useRouter } from 'expo-router';
 import { Stack } from 'expo-router/stack';
+import { doc, getDoc } from 'firebase/firestore';
 import React, { useCallback, useEffect, useMemo, useState } from 'react';
-import { ActivityIndicator, Alert, FlatList, Image, ListRenderItem, View as RNView, TouchableOpacity,
+import {
+  ActivityIndicator, Alert, FlatList, Image, ListRenderItem, View as RNView, TouchableOpacity,
 } from 'react-native';
-import { Text, View } from '../../../components/Themed';
+import { auth, db } from '../../../FirebaseConfig';
 import Logo from '../../../components/Logo';
+import { Text, View } from '../../../components/Themed';
+import { deleteLeague } from '../../../components/lib/leagues';
+import {
+  cancelInvite, listInvites, listMembers, removeMember, resendInvite, setMemberRole,
+} from '../../../components/lib/members';
+import { addDummyTournamentData, generateBracketMatches, joinTournament } from '../../../components/lib/tournaments';
 import { useColorScheme } from '../../../components/useColorScheme';
 import Colors from '../../../constants/Colors';
-import { doc, getDoc } from 'firebase/firestore';
-import { auth, db } from '../../../FirebaseConfig';
-import { deleteLeague } from '../../../components/lib/leagues';
-import { cancelInvite, listInvites, listMembers, removeMember, resendInvite, setMemberRole,
-} from '../../../components/lib/members';
-import { joinTournament, getTournamentBracket, getTournamentStandings, generateBracketMatches, addDummyTournamentData } from '../../../components/lib/tournaments';
 
+// League document type definition
+// This defines the structure of a league document from Firestore.
 type LeagueDoc = {
   name: string;
   game?: string | null;
@@ -37,6 +44,8 @@ type LeagueDoc = {
   tieBreakerRules?: string | null;
 };
 
+// Member row type definition
+// This defines the structure of a member row in the members list.
 type MemberRow = {
   id: string;
   leagueId: string;
@@ -47,6 +56,8 @@ type MemberRow = {
   photoURL?: string | null;
 };
 
+// Invite row type definition
+// This defines the structure of an invite row in the members list.
 type InviteRow = {
   id: string;
   leagueId: string;
@@ -56,11 +67,12 @@ type InviteRow = {
   createdAt?: any;
   resentAt?: any;
 };
-// two rows for listing current league members and also invited players
+
+// Unified row type for listing both members and invites
+// I use this to combine members and invites into a single list.
 type Row =
   | ({ kind: 'member' } & MemberRow)
   | ({ kind: 'invite' } & InviteRow);
-//function for the detail of league when clicked
 export default function LeagueDetailScreen() {
   const params = useLocalSearchParams();
   const leagueId =
@@ -70,7 +82,8 @@ export default function LeagueDetailScreen() {
   const router = useRouter();
   const navigation = useNavigation();
   
-  // Handle back button
+  // Handle back button navigation
+  // This function navigates back or to the leagues tab if there's no back history.
   const handleBack = useCallback(() => {
     if (router.canGoBack()) {
       router.back();
@@ -79,7 +92,7 @@ export default function LeagueDetailScreen() {
     }
   }, [router]);
 
-// defining constants from colour schemes defined elsewhere
+  // Theme colors for light/dark mode
   const colorScheme = useColorScheme() ?? 'light';
   const palette = Colors[colorScheme];
   const tint = palette.tint;
@@ -87,21 +100,25 @@ export default function LeagueDetailScreen() {
   const borderColor = palette.border ?? (colorScheme === 'dark' ? '#2A2D2F' : '#E6E6E6');
   const textColor = palette.text ?? '#1F1F1F';
 
-  const [loadingLeague, setLoadingLeague] = useState(true);
-  const [league, setLeague] = useState<LeagueDoc | null>(null);
-// handles the loading screen
-  const [loadingList, setLoadingList] = useState(true);
-  const [refreshing, setRefreshing] = useState(false);
-  const [rows, setRows] = useState<Row[]>([]);
-  const [actioningId, setActioningId] = useState<string | null>(null);
+  // Component state
+  const [loadingLeague, setLoadingLeague] = useState(true); // Loading state for fetching league data
+  const [league, setLeague] = useState<LeagueDoc | null>(null); // Current league data
+  const [loadingList, setLoadingList] = useState(true); // Loading state for fetching members/invites
+  const [refreshing, setRefreshing] = useState(false); // Loading state for pull-to-refresh
+  const [rows, setRows] = useState<Row[]>([]); // Combined list of members and invites
+  const [actioningId, setActioningId] = useState<string | null>(null); // ID of item currently being acted upon
 
+  // User permissions and status
   const uid = auth.currentUser?.uid ?? null;
-  const isOwner = !!(uid && league?.ownerId && String(uid) === String(league.ownerId));
-  const isAdmin = !!(uid && league?.admins && Array.isArray(league.admins) && league.admins.includes(uid));
-  const canManageMembers = isOwner || isAdmin;
-  const isMember = !!(uid && rows.some(r => r.kind === 'member' && (r as MemberRow).userId === uid));
+  const isOwner = !!(uid && league?.ownerId && String(uid) === String(league.ownerId)); // Check if current user is the league owner
+  const isAdmin = !!(uid && league?.admins && Array.isArray(league.admins) && league.admins.includes(uid)); // Check if current user is an admin
+  const canManageMembers = isOwner || isAdmin; // Check if user can manage members
+  const isMember = !!(uid && rows.some(r => r.kind === 'member' && (r as MemberRow).userId === uid)); // Check if current user is a member
 
-  const [deleting, setDeleting] = useState(false);
+  const [deleting, setDeleting] = useState(false); // Loading state for deleting league
+
+  // Handle league deletion
+  // This function shows a confirmation dialog and deletes the league if confirmed.
   const onDeleteLeague = useCallback(() => {
     if (!leagueId) return;
     Alert.alert(
@@ -128,6 +145,8 @@ export default function LeagueDetailScreen() {
     );
   }, [leagueId, router]);
 
+  // Load league data from Firestore
+  // This function fetches the league document and updates the state.
   const loadLeague = useCallback(async () => {
     if (!leagueId) { setLoadingLeague(false); return; }
     try {
@@ -142,8 +161,10 @@ export default function LeagueDetailScreen() {
       setLoadingLeague(false);
     }
   }, [leagueId, router]);
-  // referencehttps://www.w3schools.com/react/react_usecallback.asp
-  // using usecallbacks throughout this so that functions dont reexecute unless dependanmcies change
+
+  // Load members and invites list
+  // This function fetches all members and invites, combines them, and sorts them alphabetically.
+  // I use useCallback to prevent unnecessary re-executions.
   const loadList = useCallback(async () => {
     if (!leagueId) { setLoadingList(false); setRefreshing(false); return; }
     try {
@@ -166,25 +187,35 @@ export default function LeagueDetailScreen() {
       setRefreshing(false);
     }
   }, [leagueId]);
-//  reference https://www.w3schools.com/react/react_useeffect.asp
+
+  // Load league and list data when component mounts
+  // I use useEffect to trigger data loading when the component mounts or dependencies change.
   useEffect(() => { loadLeague(); }, [loadLeague]);
   useEffect(() => { loadList(); }, [loadList]);
 
+  // Handle pull-to-refresh
+  // This function reloads both league data and members/invites list.
   const onRefresh = () => {
     setRefreshing(true);
     Promise.all([loadLeague(), loadList()]).finally(() => setRefreshing(false));
   };
 
+  // Navigate to add member screen
+  // This function navigates to the screen where owners/admins can add new members.
   const goToAddMember = useCallback(() => {
     if (!leagueId) return;
     router.push({ pathname: '/league/[leagueId]/add-member', params: { leagueId: String(leagueId) } });
   }, [router, leagueId]);
 
+  // Navigate to bracket screen
+  // This function navigates to the tournament bracket visualization screen.
   const goToBracket = useCallback(() => {
     if (!leagueId) return;
     router.push({ pathname: '/league/[leagueId]/bracket', params: { leagueId: String(leagueId) } });
   }, [router, leagueId]);
 
+  // Handle joining the tournament
+  // This function allows users to join the tournament and shows a success message with option to view bracket.
   const onJoinTournament = useCallback(async () => {
     if (!leagueId) return;
     try {
@@ -206,6 +237,8 @@ export default function LeagueDetailScreen() {
     }
   }, [leagueId, loadList, router]);
 
+  // Handle generating bracket matches
+  // This function generates the tournament bracket matches for single or double elimination tournaments.
   const onGenerateMatches = useCallback(async () => {
     if (!leagueId) return;
     try {
@@ -226,6 +259,8 @@ export default function LeagueDetailScreen() {
     }
   }, [leagueId, router]);
 
+  // Handle adding dummy tournament data
+  // This function adds dummy players and matches for testing purposes. Only available to owners/admins.
   const onAddDummyData = useCallback(async () => {
     if (!leagueId) return;
     Alert.alert(
@@ -258,7 +293,8 @@ export default function LeagueDetailScreen() {
     );
   }, [leagueId, router]);
 
-  // ACTION HANDLERS 
+  // Handle canceling an invite
+  // This function cancels a pending invite and refreshes the list.
   const onCancelInvite = async (emailLower: string) => {
     if (!leagueId) return;
     try {
@@ -272,6 +308,8 @@ export default function LeagueDetailScreen() {
     }
   };
 
+  // Handle resending an invite
+  // This function resends an invite email and shows a success message.
   const onResendInvite = async (emailLower: string) => {
     if (!leagueId) return;
     try {
@@ -286,6 +324,8 @@ export default function LeagueDetailScreen() {
     }
   };
 
+  // Handle removing a member
+  // This function shows a confirmation dialog and removes a member from the league if confirmed.
   const onRemoveMember = async (userId: string) => {
     if (!leagueId) return;
     Alert.alert('Remove member?', 'This will remove them from the league.', [
@@ -308,6 +348,8 @@ export default function LeagueDetailScreen() {
     ]);
   };
 
+  // Handle toggling member role
+  // This function switches a member between 'member' and 'admin' roles.
   const onToggleRole = async (userId: string, currentRole: 'member' | 'admin' | undefined) => {
     if (!leagueId) return;
     const nextRole = currentRole === 'admin' ? 'member' : 'admin';
@@ -322,6 +364,8 @@ export default function LeagueDetailScreen() {
     }
   };
 
+  // List header component
+  // This memoized component renders the league details, tournament settings, and action buttons at the top of the list.
   const ListHeader = useMemo(() => {
     if (!league) return null;
     return (
@@ -574,6 +618,8 @@ export default function LeagueDetailScreen() {
     );
   }, [league, borderColor, cardBg, colorScheme, canManageMembers, goToAddMember, rows, isMember, uid, tint, textColor, actioningId, onJoinTournament, goToBracket, onGenerateMatches]);
 
+  // Action button component
+  // This is a reusable button component for member/invite actions.
   const ActionButton = ({
     label,
     onPress,
@@ -599,6 +645,8 @@ export default function LeagueDetailScreen() {
     </TouchableOpacity>
   );
 
+  // Render a single row in the members/invites list
+  // This function renders either a member row or an invite row based on the item kind.
   const renderRow: ListRenderItem<Row> = ({ item }) => {
     if (item.kind === 'member') {
       const disabled = actioningId === `member:${item.userId}` || !canManageMembers;
@@ -634,7 +682,7 @@ export default function LeagueDetailScreen() {
         </RNView>
       );
     }
-    // invite row
+    // Render invite row
     const disabled = actioningId === `invite:${item.emailLower}` || !canManageMembers;
     return (
       <RNView style={{ paddingHorizontal: 20 }}>

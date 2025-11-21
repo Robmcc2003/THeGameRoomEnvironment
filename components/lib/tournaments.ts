@@ -401,7 +401,7 @@ export async function getTournamentStandings(leagueId: string) {
   });
 }
 
-// Add Dummy Tournament Data
+// Add Dummy Tournament Data created ysing chatgpt https://chatgpt.com/share/691d9c29-51dc-8007-89a4-3ece7fb2cada
 // This function adds dummy tournament data to a league for testing purposes.
 // It creates 8 dummy members and a complete single-elimination bracket with results.
 // @param leagueId - The unique ID of the league to add dummy data to

@@ -10,7 +10,7 @@
 
 ### Firebase
 - **Firebase Documentation**: https://firebase.google.com/docs
-- **Firebase Auth**: https://firebase.google.com/docs/auth
+- **Firebase Auth**: https://firebase.google.com/docs/auth and https://youtu.be/a0KJ7l5sNGw?si=caznuBD8jCD2er9v
 - **Firestore**: https://firebase.google.com/docs/firestore
 - **Firestore Security Rules**: https://firebase.google.com/docs/firestore/security/get-started
 
@@ -22,32 +22,14 @@
 ### React
 - **React Documentation**: https://react.dev/
 
+### Dummy tournament data to display bracket created w chat gpt
+- https://chatgpt.com/share/691d9c29-51dc-8007-89a4-3ece7fb2cada
+### logo generated with the help of chat gpt 
+- https://chatgpt.com/share/691da1e5-7c44-8007-9135-608c82d9689c
+### styling for the bracket screen
+- https://chatgpt.com/share/691dab97-d050-8007-9ba3-69de17a2cc4c
+
 ## Key Files
-
-### FirebaseConfig.ts
-This file initializes all Firebase services:
-- Sets up Firebase App connection
-- Configures Authentication with in-memory persistence (for React Native)
-- Initializes Firestore database
-- Sets up Analytics (if supported)
-
-**Key Concepts:**
-- Firebase App: The main connection to your Firebase project
-- Authentication: Handles user login/signup
-- Firestore: NoSQL database for storing app data
-- Analytics: Tracks app usage (optional)
-
-### firestore.rules
-This file defines security rules for the database:
-- Controls who can read/write data
-- Prevents unauthorized access
-- Enforces data validation
-
-**Key Concepts:**
-- Security rules run on Firebase servers
-- They check every database request
-- Rules use helper functions for common checks
-- Different rules for different collections
 
 ### components/lib/tournaments.ts
 This file contains all tournament-related functions:

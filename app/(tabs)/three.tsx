@@ -1,9 +1,7 @@
 /**
  * My Badges Tab Screen
  * This is just a placeholder screen for a future badges/achievements feature.
- * Currently, it just displays "Storage" as a placeholder.
- * This screen is part of the bottom tab navigation and can be expanded
- * in the future to show user achievements, badges, or other gamification features.
+ * PLANNED FOR IT 3!
  * References:
  * - React Native SafeAreaView: https://reactnative.dev/docs/safeareaview
  * - React Native StyleSheet: https://reactnative.dev/docs/stylesheet

@@ -14,7 +14,6 @@ import Logo from '../../components/Logo';
 import React from 'react';
 
 /**
- * Tab One Screen Component
  * This is the main component for the Account/Sign Out tab.
  */
 export default function TabOneScreen() {
@@ -22,7 +21,6 @@ export default function TabOneScreen() {
   const router = useRouter();
 
   /**
-   * Handle Sign Out Button Press
    * This function is called when the user taps the "Sign Out" button.
    * It signs the user out of Firebase and navigates back to the login screen.
    * Firebase signOut docs: https://firebase.google.com/docs/reference/js/auth#signout
@@ -34,7 +32,7 @@ export default function TabOneScreen() {
       await firebaseSignOut(auth);
       
       // Navigate back to login screen
-      // router.replace() replaces the current screen (can't go back)
+      // router.replace() replaces the current screen as i cant go back 
       // The root layout will also handle redirecting based on auth state
       // Expo Router docs: https://docs.expo.dev/router/navigating-pages/
       router.replace('/');

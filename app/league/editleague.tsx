@@ -1,4 +1,7 @@
-// app/league/[leagueId]/edit.tsx
+// Edit League Screen
+// This screen allows league owners to edit their league settings and tournament details.
+// Owners can update league name, game, rules, tournament format, dates, and other settings.
+
 import React, { useEffect, useState } from 'react';
 import {
   Alert,
@@ -26,32 +29,36 @@ export default function EditLeagueScreen() {
   const { leagueId } = useLocalSearchParams<{ leagueId: string }>();
   const router = useRouter();
 
+  // Theme colors for light/dark mode
   const scheme = useColorScheme() ?? 'light';
   const palette = Colors[scheme];
   const tint = palette.tint;
 
-  // local fallbacks so we don’t need extra tokens
+  // Local fallbacks so I don't need extra tokens
   const cardBg = palette.card ?? (scheme === 'dark' ? '#16181A' : '#FFFFFF');
   const borderColor = palette.border ?? (scheme === 'dark' ? '#2A2D2F' : '#E6E6E6');
   const textColor = palette.text ?? '#1F1F1F';
 
-  const [loading, setLoading] = useState(true);
-  const [saving, setSaving] = useState(false);
-  const [name, setName] = useState('');
-  const [game, setGame] = useState('');
-  const [rules, setRules] = useState('');
-  const [numberOfRounds, setNumberOfRounds] = useState('');
-  const [maxParticipants, setMaxParticipants] = useState('');
-  const [tournamentFormat, setTournamentFormat] = useState<'normal_league' | 'single_elimination' | 'double_elimination' | 'round_robin' | ''>('');
-  const [matchDuration, setMatchDuration] = useState('');
-  const [prizeInfo, setPrizeInfo] = useState('');
-  const [startDate, setStartDate] = useState('');
-  const [endDate, setEndDate] = useState('');
-  const [registrationDeadline, setRegistrationDeadline] = useState('');
-  const [description, setDescription] = useState('');
-  const [scoringSystem, setScoringSystem] = useState('');
-  const [tieBreakerRules, setTieBreakerRules] = useState('');
+  // Component state
+  const [loading, setLoading] = useState(true); // Loading state for fetching league data
+  const [saving, setSaving] = useState(false); // Loading state for saving changes
+  const [name, setName] = useState(''); // League name
+  const [game, setGame] = useState(''); // Game being played
+  const [rules, setRules] = useState(''); // Tournament rules and guidelines
+  const [numberOfRounds, setNumberOfRounds] = useState(''); // Number of tournament rounds
+  const [maxParticipants, setMaxParticipants] = useState(''); // Maximum number of participants
+  const [tournamentFormat, setTournamentFormat] = useState<'normal_league' | 'single_elimination' | 'double_elimination' | 'round_robin' | ''>(''); // Tournament format type
+  const [matchDuration, setMatchDuration] = useState(''); // Match duration in minutes
+  const [prizeInfo, setPrizeInfo] = useState(''); // Prize information
+  const [startDate, setStartDate] = useState(''); // Tournament start date
+  const [endDate, setEndDate] = useState(''); // Tournament end date
+  const [registrationDeadline, setRegistrationDeadline] = useState(''); // Registration deadline
+  const [description, setDescription] = useState(''); // Tournament description
+  const [scoringSystem, setScoringSystem] = useState(''); // Scoring system description
+  const [tieBreakerRules, setTieBreakerRules] = useState(''); // Tie-breaker rules
 
+  // Load league data when component mounts
+  // This effect fetches the league data and populates the form fields.
   useEffect(() => {
     (async () => {
       try {
@@ -64,7 +71,8 @@ export default function EditLeagueScreen() {
         }
         const data = snap.data() as any;
 
-        // client-side guard (we’ll enforce with Firestore rules later)
+        // Client-side guard (I enforce with Firestore rules as well)
+        // Only the league owner can edit the league!
         if (auth.currentUser?.uid !== data.ownerId) {
           Alert.alert('No access', 'Only the owner can edit this league.');
           router.back();
@@ -95,6 +103,8 @@ export default function EditLeagueScreen() {
     })();
   }, [leagueId]);
 
+  // Handle saving league changes
+  // This function validates all inputs and saves the updated league data to Firestore.
   const onSave = async () => {
     if (!name.trim()) {
       Alert.alert('Validation', 'League name is required.');
@@ -102,6 +112,7 @@ export default function EditLeagueScreen() {
     }
 
     // Validate number of rounds
+    // I check if it's a valid positive number if provided.
     const roundsNum = numberOfRounds.trim() ? parseInt(numberOfRounds.trim(), 10) : null;
     if (numberOfRounds.trim() && (isNaN(roundsNum!) || roundsNum! < 1)) {
       Alert.alert('Validation', 'Number of rounds must be a positive number.');
@@ -109,6 +120,7 @@ export default function EditLeagueScreen() {
     }
 
     // Validate max participants
+    // I check if it's a valid positive number if provided.
     const maxPartsNum = maxParticipants.trim() ? parseInt(maxParticipants.trim(), 10) : null;
     if (maxParticipants.trim() && (isNaN(maxPartsNum!) || maxPartsNum! < 1)) {
       Alert.alert('Validation', 'Max participants must be a positive number.');
@@ -116,6 +128,7 @@ export default function EditLeagueScreen() {
     }
 
     // Validate match duration
+    // I check if it's a valid positive number if provided.
     const matchDurationNum = matchDuration.trim() ? parseInt(matchDuration.trim(), 10) : null;
     if (matchDuration.trim() && (isNaN(matchDurationNum!) || matchDurationNum! < 1)) {
       Alert.alert('Validation', 'Match duration must be a positive number (in minutes).');
@@ -124,6 +137,7 @@ export default function EditLeagueScreen() {
 
     try {
       setSaving(true);
+      // Update the league document in Firestore with all the form values
       const ref = doc(db, 'leagues', String(leagueId));
       await updateDoc(ref, {
         name: name.trim(),

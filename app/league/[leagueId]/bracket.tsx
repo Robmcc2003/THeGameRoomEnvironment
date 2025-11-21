@@ -14,6 +14,7 @@
 // - React Native Dimensions: https://reactnative.dev/docs/dimensions
 // - Expo Router: https://docs.expo.dev/router/introduction/
 // - React useMemo: https://react.dev/reference/react/useMemo
+// - Chatgpt for styling https://chatgpt.com/share/691dab97-d050-8007-9ba3-69de17a2cc4c
 
 import { useLocalSearchParams, useRouter } from 'expo-router';
 import { Stack } from 'expo-router/stack';

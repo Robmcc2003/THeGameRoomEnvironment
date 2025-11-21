@@ -127,7 +127,6 @@ export async function addMemberToLeague(opts: {
   return { kind: 'invited', inviteId, emailLower };
 }
 
-// List All Members of a League
 // This function gets all members (active, invited, pending) for a league.
 // It returns an array of member objects with all their information.
 // Reference: https://firebase.google.com/docs/firestore/query-data/get-data#get_multiple_documents_from_a_collection
@@ -148,7 +147,6 @@ export async function listMembers(leagueId: string) {
   }));
 }
 
-// Remove a Member from a League
 // This function removes a user's membership from a league.
 // It deletes their membership document from the database.
 // Reference: https://firebase.google.com/docs/firestore/manage-data/delete-data
@@ -203,8 +201,6 @@ export async function cancelInvite(leagueId: string, emailLower: string) {
   // Delete the invite document
   await deleteDoc(doc(db, 'leagueInvites', id));
 }
-
-// Resend an Invite
 // This function updates an invite to mark it as resent.
 // It changes the status back to 'pending' and updates the resentAt timestamp.
 // This is useful if someone didn't receive the original invite or wants to send a reminder.

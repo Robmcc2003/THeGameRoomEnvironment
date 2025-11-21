@@ -23,7 +23,7 @@ import { ActivityIndicator, Alert, FlatList, SafeAreaView, ScrollView, TextInput
 // Import FB
 import { auth, db } from '../../FirebaseConfig';
 
-// Import custom components
+// Import custom components from other files
 import Logo from '../../components/Logo';
 import { Text, View } from '../../components/Themed';
 import { styles } from '../../components/style.four';
@@ -36,7 +36,7 @@ type League = {
 };
 
 // Tab Four Screen Component
-// This is the "My Leagues" screen where users can create and view their leagues.
+// This is the "My Leagues" screen where users can create and view their own leagues.
 export default function TabFourScreen() {
   const router = useRouter();
 
@@ -82,7 +82,7 @@ export default function TabFourScreen() {
       leagueUnsubsRef.current = {};
     };
 
-    // If user is not signed in, clean up and exit
+    // If user is not signed in, clean up and exit without error
     if (!uid) {
       cleanupAllLeagueListeners();
       setMyLeagues([]);
@@ -145,7 +145,7 @@ export default function TabFourScreen() {
             const updated = { id: ld.id, name: data.name, game: data.game ?? null } as League;
 
             // Update League in State
-            // I merge or replace the league in my state array.
+            // this either merges or replaces the league in my state array.
             // If it's new, I add it. If it exists, I update it.
             setMyLeagues((prev) => {
               const i = prev.findIndex((L) => L.id === id);
@@ -196,7 +196,7 @@ export default function TabFourScreen() {
 
     try {
       // Create new league document in Firestore
-      // addDoc() automatically generates a unique document ID
+      // addDoc() automatically generates a unique document ID to identufy different leagues
       const leagueRef = await addDoc(collection(db, 'leagues'), {
         name: leagueName.trim(),
         game: game.trim() || null,
@@ -241,7 +241,7 @@ export default function TabFourScreen() {
       Alert.alert('Error', 'Failed to create league: ' + (error?.message || 'Unknown error'));
     }
   };
-
+//predominantly styling and UI structure below
   return (
     <SafeAreaView style={styles.safeArea}>
       <ScrollView style={styles.container}>
