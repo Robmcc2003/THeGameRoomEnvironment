@@ -2,6 +2,7 @@ import { auth, db } from '../../FirebaseConfig';
 import { collection, query, where,
   getDocs, doc, getDoc, setDoc, serverTimestamp, deleteDoc,
 } from 'firebase/firestore';
+import { autoGenerateBracketIfNeeded } from './tournaments';
 
 export type MemberRole = 'member' | 'admin';
 export type MemberStatus = 'active' | 'invited' | 'pending';
@@ -105,6 +106,10 @@ export async function addMemberToLeague(opts: {
       joinedAt: serverTimestamp(), // When they joined (server timestamp is accurate)
       addedBy: current.uid, // Who added them (the person calling this function)
     });
+
+    // Auto-generate brackets if conditions are met
+    // This makes the bracket tab always useful without manual intervention
+    await autoGenerateBracketIfNeeded(leagueId);
 
     return { kind: 'added', memberId, user };
   }

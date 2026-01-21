@@ -19,6 +19,9 @@ import React from 'react';
 export default function TabOneScreen() {
   // Get router for navigation
   const router = useRouter();
+  
+  // Track sign out state to prevent multiple calls
+  const [isSigningOut, setIsSigningOut] = React.useState(false);
 
   /**
    * This function is called when the user taps the "Sign Out" button.
@@ -26,22 +29,32 @@ export default function TabOneScreen() {
    * Firebase signOut docs: https://firebase.google.com/docs/reference/js/auth#signout
    */
   const handleSignOut = async () => {
+    // Prevent multiple simultaneous sign out attempts
+    if (isSigningOut) {
+      return;
+    }
+    
+    setIsSigningOut(true);
+    
     try {
+      // Navigate to login screen BEFORE signing out
+      // This ensures we're outside tabs before auth state changes
+      // Once we navigate, the auth listener will keep us on login
+      console.log('Navigating to login before sign out');
+      router.replace('/');
+      
+      // Small delay to ensure navigation completes
+      await new Promise(resolve => setTimeout(resolve, 200));
+      
       // Sign out from Firebase Authentication
       // This clears the user's authentication session
       await firebaseSignOut(auth);
       
-      // Navigate back to login screen
-      // router.replace() replaces the current screen as i cant go back 
-      // The root layout will also handle redirecting based on auth state
-      // Expo Router docs: https://docs.expo.dev/router/navigating-pages/
-      router.replace('/');
+      console.log('Sign out successful');
       
     } catch (error: any) {
       console.error('Sign out error:', error);
-      // Even if signout fails, navigate to login screen
-      // This ensures the user can still access the app
-      router.replace('/');
+      setIsSigningOut(false);
       // Show error message to user
       alert('Sign out failed: ' + (error?.message || 'Unknown error'));
     }
@@ -69,10 +82,13 @@ export default function TabOneScreen() {
           
           {/* Sign out button */}
           <TouchableOpacity 
-            style={styles.button} 
+            style={[styles.button, isSigningOut && styles.buttonDisabled]} 
             onPress={handleSignOut} // Call handleSignOut when pressed
+            disabled={isSigningOut}
           >
-            <Text style={styles.text}>Sign Out</Text>
+            <Text style={styles.text}>
+              {isSigningOut ? 'Signing Out...' : 'Sign Out'}
+            </Text>
           </TouchableOpacity>
         </View>
       </View>

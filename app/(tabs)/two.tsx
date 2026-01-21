@@ -75,7 +75,7 @@ export default function TabTwoScreen() {
         where('status', '==', 'active')
       );
       const membersSnap = await getDocs(membersQuery);
-      // Create a Set of league IDs for quick membership lookup. Havent really used it yet
+      // Create a Set of league IDs for quick membership lookup
       const membershipIds = new Set(membersSnap.docs.map(d => d.data().leagueId));
 
       setUserMemberships(membershipIds);

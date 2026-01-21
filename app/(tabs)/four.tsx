@@ -27,12 +27,27 @@ import { auth, db } from '../../FirebaseConfig';
 import Logo from '../../components/Logo';
 import { Text, View } from '../../components/Themed';
 import { styles } from '../../components/style.four';
+import { getUserProgress } from '../../components/lib/tournaments';
+import { useColorScheme } from '../../components/useColorScheme';
+import Colors from '../../constants/Colors';
 
 // This defines the structure of a league object for this screen.
 type League = { 
   id: string; // Unique league identifier
   name: string; // League name
   game?: string | null; // Game being played (optional)
+  tournamentFormat?: 'normal_league' | 'single_elimination' | 'double_elimination' | 'round_robin' | null; // Tournament type
+};
+
+// User progress in a league
+type LeagueProgress = {
+  position: number | null;
+  wins: number;
+  losses: number;
+  winRate: number;
+  totalMatches: number;
+  upcomingMatches: number;
+  completedMatches: number;
 };
 
 // Tab Four Screen Component
@@ -48,6 +63,8 @@ export default function TabFourScreen() {
   const [uid, setUid] = useState<string | null>(auth.currentUser?.uid ?? null); // Current user ID
   const [loadingLeagues, setLoadingLeagues] = useState(true); // Loading state
   const [myLeagues, setMyLeagues] = useState<League[]>([]); // List of user's leagues
+  const [leagueProgress, setLeagueProgress] = useState<Record<string, LeagueProgress | null>>({}); // Progress for each league
+  const [loadingProgress, setLoadingProgress] = useState<Record<string, boolean>>({}); // Loading state for progress
   
   // League Listeners Reference
   // useRef() stores a mutable value that doesn't trigger re-renders.
@@ -142,7 +159,12 @@ export default function TabFourScreen() {
 
             // Get league data
             const data = ld.data() as any;
-            const updated = { id: ld.id, name: data.name, game: data.game ?? null } as League;
+            const updated = { 
+              id: ld.id, 
+              name: data.name, 
+              game: data.game ?? null,
+              tournamentFormat: data.tournamentFormat ?? null,
+            } as League;
 
             // Update League in State
             // this either merges or replaces the league in my state array.
@@ -154,6 +176,11 @@ export default function TabFourScreen() {
               copy[i] = updated; // Update existing league
               return copy;
             });
+            
+            // Load progress for this league
+            if (uid) {
+              loadLeagueProgress(id, uid);
+            }
             
             setLoadingLeagues(false);
           });
@@ -177,6 +204,22 @@ export default function TabFourScreen() {
       cleanupAllLeagueListeners();
     };
   }, [uid]); // Re-run when user ID changes
+
+  // Load progress for a specific league
+  const loadLeagueProgress = async (leagueId: string, userId: string) => {
+    if (loadingProgress[leagueId]) return; // Already loading
+    
+    try {
+      setLoadingProgress(prev => ({ ...prev, [leagueId]: true }));
+      const progress = await getUserProgress(leagueId, userId);
+      setLeagueProgress(prev => ({ ...prev, [leagueId]: progress }));
+    } catch (error) {
+      console.error(`Failed to load progress for league ${leagueId}:`, error);
+      setLeagueProgress(prev => ({ ...prev, [leagueId]: null }));
+    } finally {
+      setLoadingProgress(prev => ({ ...prev, [leagueId]: false }));
+    }
+  };
 
   // Handle Creating a New League
   // This function is called when the user submits the create league form.
@@ -242,6 +285,13 @@ export default function TabFourScreen() {
     }
   };
 //predominantly styling and UI structure below
+  const colorScheme = useColorScheme() ?? 'light';
+  const palette = Colors[colorScheme];
+  const tint = palette.tint;
+  const cardBg = palette.card ?? (colorScheme === 'dark' ? '#16181A' : '#FFFFFF');
+  const borderColor = palette.border ?? (colorScheme === 'dark' ? '#2A2D2F' : '#E6E6E6');
+  const textColor = palette.text ?? '#1F1F1F';
+
   return (
     <SafeAreaView style={styles.safeArea}>
       <ScrollView style={styles.container}>
@@ -275,7 +325,7 @@ export default function TabFourScreen() {
           <Text style={styles.buttonText}>Create League</Text>
         </TouchableOpacity>
 
-        <Text style={styles.sectionTitle}>My Leagues</Text>
+        <Text style={styles.sectionTitle}>My Leagues & Progress</Text>
 
         {loadingLeagues ? (
           <ActivityIndicator size="large" color="#DC143C" style={{ marginTop: 20 }} />
@@ -286,22 +336,121 @@ export default function TabFourScreen() {
             data={myLeagues}
             keyExtractor={(item) => item.id}
             scrollEnabled={false}
-            renderItem={({ item }) => (
-              <TouchableOpacity
-                style={styles.leagueItem}
-                onPress={() => {
-                  router.push({
-                    pathname: '/league/[leagueId]',
-                    params: { leagueId: item.id },
-                  });
-                }}
-              >
-                <Text style={styles.leagueName}>{item.name}</Text>
-                {item.game && (
-                  <Text style={styles.leagueGame}>{item.game}</Text>
-                )}
-              </TouchableOpacity>
-            )}
+            renderItem={({ item }) => {
+              const progress = leagueProgress[item.id];
+              const isLoading = loadingProgress[item.id];
+              const hasTournament = item.tournamentFormat && item.tournamentFormat !== 'normal_league';
+              
+              return (
+                <TouchableOpacity
+                  style={[
+                    styles.leagueItem,
+                    {
+                      borderWidth: 2,
+                      borderColor: progress && progress.position === 1 ? tint : borderColor,
+                      backgroundColor: cardBg,
+                      borderRadius: 16,
+                      padding: 16,
+                      marginBottom: 12,
+                      shadowColor: progress && progress.position === 1 ? tint : '#000000',
+                      shadowOffset: { width: 0, height: 2 },
+                      shadowOpacity: progress && progress.position === 1 ? 0.3 : 0.1,
+                      shadowRadius: 4,
+                      elevation: progress && progress.position === 1 ? 5 : 3,
+                    }
+                  ]}
+                  onPress={() => {
+                    router.push({
+                      pathname: '/league/[leagueId]',
+                      params: { leagueId: item.id },
+                    });
+                  }}
+                >
+                  <View style={{ flexDirection: 'row', justifyContent: 'space-between', alignItems: 'flex-start', marginBottom: 8 }}>
+                    <View style={{ flex: 1 }}>
+                      <Text style={[styles.leagueName, { fontWeight: '800', fontSize: 18 }]}>{item.name}</Text>
+                      {item.game && (
+                        <Text style={[styles.leagueGame, { marginTop: 4, opacity: 0.7 }]}>{item.game}</Text>
+                      )}
+                      {hasTournament && (
+                        <Text style={{ fontSize: 12, opacity: 0.6, marginTop: 4, textTransform: 'capitalize' }}>
+                          {item.tournamentFormat?.replace(/_/g, ' ')}
+                        </Text>
+                      )}
+                    </View>
+                    {hasTournament && (
+                      <TouchableOpacity
+                        onPress={(e) => {
+                          e.stopPropagation();
+                          router.push({
+                            pathname: '/league/[leagueId]/bracket',
+                            params: { leagueId: item.id },
+                          });
+                        }}
+                        style={{
+                          paddingHorizontal: 12,
+                          paddingVertical: 6,
+                          borderRadius: 8,
+                          backgroundColor: tint,
+                          borderWidth: 2,
+                          borderColor: '#000000',
+                        }}
+                      >
+                        <Text style={{ color: '#FFFFFF', fontWeight: '700', fontSize: 12 }}>View Bracket</Text>
+                      </TouchableOpacity>
+                    )}
+                  </View>
+                  
+                  {/* Progress Section */}
+                  {isLoading ? (
+                    <View style={{ marginTop: 12, alignItems: 'center' }}>
+                      <ActivityIndicator size="small" color={tint} />
+                    </View>
+                  ) : progress ? (
+                    <View style={{ 
+                      marginTop: 12, 
+                      paddingTop: 12, 
+                      borderTopWidth: 1, 
+                      borderTopColor: borderColor,
+                      opacity: 0.8,
+                    }}>
+                      <View style={{ flexDirection: 'row', justifyContent: 'space-between', alignItems: 'center', marginBottom: 6 }}>
+                        {progress.position !== null ? (
+                          <Text style={{ fontSize: 16, fontWeight: '800', color: progress.position === 1 ? tint : textColor }}>
+                            Rank: #{String(progress.position)}
+                          </Text>
+                        ) : (
+                          <Text style={{ fontSize: 14, fontWeight: '600', opacity: 0.7 }}>
+                            No matches yet
+                          </Text>
+                        )}
+                        {progress.totalMatches > 0 && (
+                          <Text style={{ fontSize: 14, fontWeight: '700', color: textColor }}>
+                            {String(progress.wins)}W - {String(progress.losses)}L
+                          </Text>
+                        )}
+                      </View>
+                      {progress.totalMatches > 0 && (
+                        <View style={{ flexDirection: 'row', justifyContent: 'space-between', alignItems: 'center' }}>
+                          <Text style={{ fontSize: 13, opacity: 0.7, fontWeight: '600' }}>
+                            Win Rate: {progress.winRate.toFixed(1)}%
+                          </Text>
+                          <Text style={{ fontSize: 13, opacity: 0.7, fontWeight: '600' }}>
+                            {String(progress.upcomingMatches)} upcoming • {String(progress.completedMatches)} completed
+                          </Text>
+                        </View>
+                      )}
+                    </View>
+                  ) : hasTournament ? (
+                    <View style={{ marginTop: 12, paddingTop: 12, borderTopWidth: 1, borderTopColor: borderColor }}>
+                      <Text style={{ fontSize: 13, opacity: 0.6, fontStyle: 'italic' }}>
+                        No tournament data available yet
+                      </Text>
+                    </View>
+                  ) : null}
+                </TouchableOpacity>
+              );
+            }}
           />
         )}
       </ScrollView>

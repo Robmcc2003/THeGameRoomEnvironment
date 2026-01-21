@@ -1,47 +1,37 @@
 /**
  * My Badges Tab Screen
- * This is just a placeholder screen for a future badges/achievements feature.
- * PLANNED FOR IT 3!
- * References:
- * - React Native SafeAreaView: https://reactnative.dev/docs/safeareaview
- * - React Native StyleSheet: https://reactnative.dev/docs/stylesheet
+ * This is a placeholder screen for a future badges/achievements feature.
  */
 
 import React from 'react';
 import { SafeAreaView, StyleSheet, Text } from 'react-native';
 
-/**
- * Tab Three Screen Component
- * This is a simple placeholder component that will be expanded in the future.
- */
-export default function TabTwoScreen() {
+export default function TabThreeScreen() {
   return (
     <SafeAreaView style={styles.container}>
-      <Text style={styles.mainTitle}>Storage</Text>
+      <Text style={styles.mainTitle}>My Badges</Text>
+      <Text style={styles.subtitle}>Coming soon...</Text>
     </SafeAreaView>
   );
 }
 
-/**
- * Styles for the Badges Screen
- * React Native StyleSheet docs: https://reactnative.dev/docs/stylesheet
- */
 const styles = StyleSheet.create({
-  safeArea: {
-    flex: 1,
-    backgroundColor: '#FFFFFF',
-  },
   container: {
     flex: 1,
-    alignItems: 'center', // Center horizontally
-    justifyContent: 'center', // Center vertically
+    alignItems: 'center',
+    justifyContent: 'center',
     padding: 20,
     backgroundColor: '#FFFFFF',
   },
   mainTitle: {
     fontSize: 28,
-    fontWeight: 'bold',
+    fontWeight: '800',
     marginBottom: 10,
     color: '#000000',
+  },
+  subtitle: {
+    fontSize: 16,
+    color: '#666666',
+    fontWeight: '500',
   },
 });

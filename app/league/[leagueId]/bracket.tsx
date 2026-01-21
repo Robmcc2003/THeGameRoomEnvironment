@@ -19,14 +19,14 @@
 import { useLocalSearchParams, useRouter } from 'expo-router';
 import { Stack } from 'expo-router/stack';
 import React, { useCallback, useEffect, useMemo, useState } from 'react';
-import { ActivityIndicator, Alert, Dimensions, FlatList, RefreshControl, ScrollView, TouchableOpacity, View as RNView } from 'react-native';
+import { ActivityIndicator, Alert, Dimensions, FlatList, Modal, RefreshControl, ScrollView, TextInput, TouchableOpacity, View as RNView } from 'react-native';
 import { Text, View } from '../../../components/Themed';
 import Logo from '../../../components/Logo';
 import { useColorScheme } from '../../../components/useColorScheme';
 import Colors from '../../../constants/Colors';
 import { collection, doc, getDoc, getDocs, query, where } from 'firebase/firestore';
 import { auth, db } from '../../../FirebaseConfig';
-import { getTournamentBracket, getTournamentStandings, Match } from '../../../components/lib/tournaments';
+import { getTournamentBracket, getTournamentStandings, Match, autoGenerateBracketIfNeeded, updateMatchScore } from '../../../components/lib/tournaments';
 
 // League Document Type
 // This defines the structure of a league document from Firestore.
@@ -59,6 +59,12 @@ export default function TournamentBracketScreen() {
   const [standings, setStandings] = useState<any[]>([]);
   const [viewMode, setViewMode] = useState<'bracket' | 'standings'>('standings');
   const [memberMap, setMemberMap] = useState<Record<string, { displayName?: string | null; userId: string }>>({});
+  const [scoreModalVisible, setScoreModalVisible] = useState(false);
+  const [selectedMatch, setSelectedMatch] = useState<Match | null>(null);
+  const [player1Score, setPlayer1Score] = useState('');
+  const [player2Score, setPlayer2Score] = useState('');
+  const [savingScore, setSavingScore] = useState(false);
+  const [isAdmin, setIsAdmin] = useState(false);
 
   const uid = auth.currentUser?.uid ?? null;
 
@@ -93,11 +99,26 @@ export default function TournamentBracketScreen() {
         router.back();
         return;
       }
-      setLeague(snap.data() as LeagueDoc);
+      const leagueData = snap.data() as LeagueDoc;
+      setLeague(leagueData);
+      
+      // Check if user is admin or owner
+      if (uid) {
+        const isOwner = leagueData.ownerId === uid;
+        const isLeagueAdmin = Array.isArray(leagueData.admins) && leagueData.admins.includes(uid);
+        
+        // Check if user is system admin
+        const userRef = doc(db, 'users', uid);
+        const userSnap = await getDoc(userRef);
+        const userData = userSnap.exists() ? userSnap.data() : null;
+        const isSystemAdmin = userData?.role === 'admin';
+        
+        setIsAdmin(isOwner || isLeagueAdmin || isSystemAdmin);
+      }
     } catch (e) {
       console.error('Failed to load league', e);
     }
-  }, [leagueId, router]);
+  }, [leagueId, router, uid]);
 
   const loadMembers = useCallback(async () => {
     if (!leagueId) return;
@@ -126,6 +147,11 @@ export default function TournamentBracketScreen() {
     if (!leagueId) { setLoading(false); setRefreshing(false); return; }
     try {
       setLoading(true);
+      
+      // Auto-generate brackets if needed (before loading)
+      // This ensures the bracket tab is always useful
+      await autoGenerateBracketIfNeeded(leagueId);
+      
       const [bracketData, standingsData] = await Promise.all([
         getTournamentBracket(leagueId),
         getTournamentStandings(leagueId),
@@ -153,6 +179,39 @@ export default function TournamentBracketScreen() {
   const onRefresh = () => {
     setRefreshing(true);
     Promise.all([loadLeague(), loadBracket()]).finally(() => setRefreshing(false));
+  };
+
+  // Handle opening score entry modal
+  const openScoreModal = (match: Match) => {
+    setSelectedMatch(match);
+    setPlayer1Score(match.result?.player1Score?.toString() || '');
+    setPlayer2Score(match.result?.player2Score?.toString() || '');
+    setScoreModalVisible(true);
+  };
+
+  // Handle saving match score
+  const handleSaveScore = async () => {
+    if (!selectedMatch) return;
+    
+    const p1Score = parseInt(player1Score, 10);
+    const p2Score = parseInt(player2Score, 10);
+    
+    if (isNaN(p1Score) || isNaN(p2Score) || p1Score < 0 || p2Score < 0) {
+      Alert.alert('Invalid Scores', 'Please enter valid non-negative numbers for both scores.');
+      return;
+    }
+    
+    try {
+      setSavingScore(true);
+      await updateMatchScore(selectedMatch.id, p1Score, p2Score);
+      Alert.alert('Success', 'Match score updated successfully.');
+      setScoreModalVisible(false);
+      await loadBracket(); // Reload bracket to show updated scores
+    } catch (error: any) {
+      Alert.alert('Error', error.message || 'Failed to update match score.');
+    } finally {
+      setSavingScore(false);
+    }
   };
 
   const getPlayerName = (userId: string | null | undefined): string => {
@@ -363,6 +422,27 @@ export default function TournamentBracketScreen() {
                               <Text style={{ fontSize: 12 }}>👑</Text>
                             </RNView>
                           )}
+                          
+                          {/* Score Entry Button for Admins */}
+                          {isAdmin && (
+                            <TouchableOpacity
+                              onPress={() => openScoreModal(match)}
+                              style={{
+                                marginTop: 6,
+                                paddingVertical: 4,
+                                paddingHorizontal: 8,
+                                borderRadius: 6,
+                                backgroundColor: tint,
+                                borderWidth: 1,
+                                borderColor: '#000000',
+                                alignItems: 'center',
+                              }}
+                            >
+                              <Text style={{ color: '#FFFFFF', fontWeight: '700', fontSize: 10 }}>
+                                {isCompleted ? 'Edit' : 'Enter Score'}
+                              </Text>
+                            </TouchableOpacity>
+                          )}
                         </View>
 
                         {/* Connecting lines to next round (if not final round) */}
@@ -522,6 +602,26 @@ export default function TournamentBracketScreen() {
             </Text>
           )}
         </RNView>
+        {/* Score Entry Button for Admins */}
+        {isAdmin && (
+          <TouchableOpacity
+            onPress={() => openScoreModal(match)}
+            style={{
+              marginTop: 12,
+              paddingVertical: 10,
+              paddingHorizontal: 16,
+              borderRadius: 8,
+              backgroundColor: tint,
+              borderWidth: 2,
+              borderColor: '#000000',
+              alignItems: 'center',
+            }}
+          >
+            <Text style={{ color: '#FFFFFF', fontWeight: '700', fontSize: 14 }}>
+              {isCompleted ? 'Edit Score' : 'Enter Score'}
+            </Text>
+          </TouchableOpacity>
+        )}
       </View>
     );
   };
@@ -804,6 +904,165 @@ export default function TournamentBracketScreen() {
           </>
         )}
       </ScrollView>
+
+      {/* Score Entry Modal */}
+      <Modal
+        visible={scoreModalVisible}
+        transparent={true}
+        animationType="slide"
+        onRequestClose={() => setScoreModalVisible(false)}
+      >
+        <RNView style={{
+          flex: 1,
+          backgroundColor: 'rgba(0, 0, 0, 0.5)',
+          justifyContent: 'center',
+          alignItems: 'center',
+          padding: 20,
+        }}>
+          <View style={{
+            backgroundColor: cardBg,
+            borderRadius: 16,
+            borderWidth: 2,
+            borderColor: borderColor,
+            padding: 24,
+            width: '100%',
+            maxWidth: 400,
+            shadowColor: '#000000',
+            shadowOffset: { width: 0, height: 4 },
+            shadowOpacity: 0.3,
+            shadowRadius: 8,
+            elevation: 10,
+          }}>
+            <Text style={{
+              fontSize: 24,
+              fontWeight: '800',
+              marginBottom: 8,
+              color: textColor,
+            }}>
+              Enter Match Score
+            </Text>
+            {selectedMatch && (
+              <>
+                <Text style={{
+                  fontSize: 14,
+                  opacity: 0.7,
+                  marginBottom: 20,
+                  color: textColor,
+                }}>
+                  Round {selectedMatch.round} • Match {selectedMatch.matchNumber}
+                </Text>
+                
+                <RNView style={{ marginBottom: 16 }}>
+                  <Text style={{
+                    fontSize: 16,
+                    fontWeight: '700',
+                    marginBottom: 8,
+                    color: textColor,
+                  }}>
+                    {getPlayerName(selectedMatch.player1Id)}
+                  </Text>
+                  <TextInput
+                    style={{
+                      borderWidth: 2,
+                      borderColor: borderColor,
+                      backgroundColor: cardBg,
+                      borderRadius: 10,
+                      paddingHorizontal: 16,
+                      paddingVertical: 12,
+                      fontSize: 18,
+                      fontWeight: '600',
+                      color: textColor,
+                    }}
+                    placeholder="0"
+                    value={player1Score}
+                    onChangeText={setPlayer1Score}
+                    keyboardType="numeric"
+                    placeholderTextColor="#999999"
+                  />
+                </RNView>
+
+                <RNView style={{ marginBottom: 24 }}>
+                  <Text style={{
+                    fontSize: 16,
+                    fontWeight: '700',
+                    marginBottom: 8,
+                    color: textColor,
+                  }}>
+                    {getPlayerName(selectedMatch.player2Id)}
+                  </Text>
+                  <TextInput
+                    style={{
+                      borderWidth: 2,
+                      borderColor: borderColor,
+                      backgroundColor: cardBg,
+                      borderRadius: 10,
+                      paddingHorizontal: 16,
+                      paddingVertical: 12,
+                      fontSize: 18,
+                      fontWeight: '600',
+                      color: textColor,
+                    }}
+                    placeholder="0"
+                    value={player2Score}
+                    onChangeText={setPlayer2Score}
+                    keyboardType="numeric"
+                    placeholderTextColor="#999999"
+                  />
+                </RNView>
+
+                <RNView style={{ flexDirection: 'row', gap: 12 }}>
+                  <TouchableOpacity
+                    onPress={() => setScoreModalVisible(false)}
+                    style={{
+                      flex: 1,
+                      paddingVertical: 14,
+                      borderRadius: 10,
+                      borderWidth: 2,
+                      borderColor: borderColor,
+                      backgroundColor: cardBg,
+                      alignItems: 'center',
+                    }}
+                  >
+                    <Text style={{
+                      color: textColor,
+                      fontWeight: '700',
+                      fontSize: 16,
+                    }}>
+                      Cancel
+                    </Text>
+                  </TouchableOpacity>
+                  <TouchableOpacity
+                    onPress={handleSaveScore}
+                    disabled={savingScore}
+                    style={{
+                      flex: 1,
+                      paddingVertical: 14,
+                      borderRadius: 10,
+                      backgroundColor: tint,
+                      borderWidth: 2,
+                      borderColor: '#000000',
+                      alignItems: 'center',
+                      opacity: savingScore ? 0.7 : 1,
+                    }}
+                  >
+                    {savingScore ? (
+                      <ActivityIndicator color="#FFFFFF" />
+                    ) : (
+                      <Text style={{
+                        color: '#FFFFFF',
+                        fontWeight: '700',
+                        fontSize: 16,
+                      }}>
+                        Save Score
+                      </Text>
+                    )}
+                  </TouchableOpacity>
+                </RNView>
+              </>
+            )}
+          </View>
+        </RNView>
+      </Modal>
     </>
   );
 }

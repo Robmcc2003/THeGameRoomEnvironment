@@ -15,6 +15,7 @@ const index = () => {
   const [email, setEmail] = useState(''); // User's email address
   const [password, setPassword] = useState(''); // User's password
   const [username, setUsername] = useState(''); // User's chosen username (for signup)
+  const [userRole, setUserRole] = useState<'user' | 'admin'>('user'); // User's role (for signup)
   const [isSignUp, setIsSignUp] = useState(false); // Toggle between sign in and sign up modes
   const [loading, setLoading] = useState(true); // Loading state for checking auth status
   const [signingIn, setSigningIn] = useState(false); // Loading state for sign in process
@@ -74,8 +75,8 @@ const index = () => {
   }
 
   // Create user profile in Firestore
-  // This function creates or updates a user's profile document with their email and username.
-  const createUserProfile = async (userId: string, email: string, username: string) => {
+  // This function creates or updates a user's profile document with their email, username, and role.
+  const createUserProfile = async (userId: string, email: string, username: string, role: 'user' | 'admin' = 'user') => {
     const userRef = doc(db, 'users', userId);
     const userSnap = await getDoc(userRef);
     
@@ -84,6 +85,7 @@ const index = () => {
       emailLower: email.toLowerCase(),
       username: username.trim(),
       displayName: username.trim(),
+      role: role, // Store user role (user or admin)
       createdAt: userSnap.exists() ? userSnap.data().createdAt : serverTimestamp(),
       updatedAt: serverTimestamp(),
     };
@@ -172,8 +174,8 @@ const index = () => {
       const userCredential = await createUserWithEmailAndPassword(auth, email, password);
       
       if (userCredential.user) {
-        // Create user profile in Firestore
-        await createUserProfile(userCredential.user.uid, email, usernameTrimmed);
+        // Create user profile in Firestore with selected role
+        await createUserProfile(userCredential.user.uid, email, usernameTrimmed, userRole);
         router.replace('/(tabs)');
       }
     } catch (error: any) {
@@ -212,15 +214,52 @@ const index = () => {
           <Text style={styles.subtitle}>{isSignUp ? 'Sign up to get started' : 'Sign in to continue'}</Text>
           
           {isSignUp && (
-            <TextInput 
-              style={styles.textInput} 
-              placeholder="username" 
-              value={username} 
-              onChangeText={setUsername}
-              autoCapitalize="none"
-              placeholderTextColor="#999999"
-              maxLength={20}
-            />
+            <>
+              <TextInput 
+                style={styles.textInput} 
+                placeholder="username" 
+                value={username} 
+                onChangeText={setUsername}
+                autoCapitalize="none"
+                placeholderTextColor="#999999"
+                maxLength={20}
+              />
+              
+              {/* Role Selection */}
+              <View style={styles.roleContainer}>
+                <Text style={styles.roleLabel}>Account Type:</Text>
+                <View style={styles.roleButtons}>
+                  <TouchableOpacity
+                    style={[
+                      styles.roleButton,
+                      userRole === 'user' && styles.roleButtonActive
+                    ]}
+                    onPress={() => setUserRole('user')}
+                  >
+                    <Text style={[
+                      styles.roleButtonText,
+                      userRole === 'user' && styles.roleButtonTextActive
+                    ]}>
+                      Normal User
+                    </Text>
+                  </TouchableOpacity>
+                  <TouchableOpacity
+                    style={[
+                      styles.roleButton,
+                      userRole === 'admin' && styles.roleButtonActive
+                    ]}
+                    onPress={() => setUserRole('admin')}
+                  >
+                    <Text style={[
+                      styles.roleButtonText,
+                      userRole === 'admin' && styles.roleButtonTextActive
+                    ]}>
+                      Admin
+                    </Text>
+                  </TouchableOpacity>
+                </View>
+              </View>
+            </>
           )}
           
           <TextInput 
@@ -275,6 +314,7 @@ const index = () => {
             onPress={() => {
               setIsSignUp(!isSignUp);
               setUsername('');
+              setUserRole('user'); // Reset to default role
             }}
             style={styles.toggleButton}
           >
@@ -360,10 +400,6 @@ const styles = StyleSheet.create({
     borderWidth: 2,
     borderColor: '#000000',
   },
-  buttonSecondary: {
-    backgroundColor: '#000000',
-    borderColor: '#DC143C',
-  },
   buttonDisabled: {
     opacity: 0.6,
   },
@@ -382,5 +418,43 @@ const styles = StyleSheet.create({
     fontSize: 14,
     fontWeight: '600',
     textDecorationLine: 'underline',
+  },
+  roleContainer: {
+    width: '100%',
+    marginVertical: 12,
+  },
+  roleLabel: {
+    fontSize: 16,
+    fontWeight: '700',
+    color: '#000000',
+    marginBottom: 12,
+  },
+  roleButtons: {
+    flexDirection: 'row',
+    gap: 12,
+  },
+  roleButton: {
+    flex: 1,
+    paddingVertical: 14,
+    paddingHorizontal: 16,
+    borderRadius: 12,
+    borderWidth: 2,
+    borderColor: '#000000',
+    backgroundColor: '#FFFFFF',
+    alignItems: 'center',
+    justifyContent: 'center',
+  },
+  roleButtonActive: {
+    backgroundColor: '#DC143C',
+    borderColor: '#DC143C',
+  },
+  roleButtonText: {
+    fontSize: 16,
+    fontWeight: '600',
+    color: '#000000',
+  },
+  roleButtonTextActive: {
+    color: '#FFFFFF',
+    fontWeight: '700',
   }
 });

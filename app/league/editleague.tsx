@@ -24,6 +24,7 @@ import Colors from '../../constants/Colors';
 
 import { auth, db } from '../../FirebaseConfig';
 import { doc, getDoc, updateDoc, serverTimestamp } from 'firebase/firestore';
+import { autoGenerateBracketIfNeeded } from '../../components/lib/tournaments';
 
 export default function EditLeagueScreen() {
   const { leagueId } = useLocalSearchParams<{ leagueId: string }>();
@@ -156,6 +157,12 @@ export default function EditLeagueScreen() {
         tieBreakerRules: tieBreakerRules.trim() || null,
         updatedAt: serverTimestamp(),
       });
+      
+      // Auto-generate brackets if tournament format was set/changed and conditions are met
+      if (tournamentFormat === 'single_elimination' || tournamentFormat === 'double_elimination') {
+        await autoGenerateBracketIfNeeded(String(leagueId));
+      }
+      
       Alert.alert('Saved', 'League updated.');
       router.back();
     } catch (e: any) {

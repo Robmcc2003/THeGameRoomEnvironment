@@ -18,9 +18,9 @@
 import FontAwesome from '@expo/vector-icons/FontAwesome';
 import { DarkTheme, DefaultTheme, ThemeProvider } from '@react-navigation/native';
 import { useFonts } from 'expo-font';
-import { Stack, useRouter, useSegments } from 'expo-router';
+import { Stack, useRouter, useSegments, usePathname } from 'expo-router';
 import * as SplashScreen from 'expo-splash-screen';
-import React, { useEffect } from 'react';
+import React, { useEffect, useState, useRef } from 'react';
 import 'react-native-reanimated';
 import { useColorScheme } from '../components/useColorScheme';
 
@@ -94,31 +94,56 @@ function RootLayoutNav() {
   // Get router for navigation
   const router = useRouter();
   
-  // Get current route segments (for checking which screen I'm on)
+  // Get current route segments and pathname (for checking which screen I'm on)
   const segments = useSegments();
+  const pathname = usePathname();
+  
+  // Track auth state for conditional rendering
+  const [user, setUser] = useState(auth.currentUser);
 
   // Listen for Authentication State Changes
   // This effect listens for when users sign in or sign out.
   // When a user signs in from the login screen, I redirect them to the main app.
+  // When a user signs out, I redirect them back to the login screen.
   // Firebase Auth state listener: https://firebase.google.com/docs/auth/web/manage-users#get_the_currently_signed-in_user
   // React useEffect docs: https://react.dev/reference/react/useEffect
   useEffect(() => {
     // Set up listener for authentication state changes
-    const unsubscribe = onAuthStateChanged(auth, (user) => {
-      // Get the current route (first segment)
-      const currentSegment = segments[0] as string | undefined;
-      // Check if I'm on the login screen
-      const onLoginScreen = currentSegment === 'index' || !currentSegment;
+    const unsubscribe = onAuthStateChanged(auth, (currentUser) => {
+      setUser(currentUser);
+      
+      // Check if we're in tabs navigator (not on login screen)
+      // When in tabs, segments[0] will be '(tabs)' even if pathname is '/'
+      const inTabs = segments[0] === '(tabs)';
+      // We're on login screen only if we're NOT in tabs AND pathname is root/index
+      const onLoginScreen = !inTabs && (pathname === '/' || pathname === '/index' || !pathname);
+      
+      console.log('Auth state changed:', { user: !!currentUser, pathname, segments, onLoginScreen, inTabs });
       
       // If user is signed in and on login screen, redirect to main app
-      if (user && onLoginScreen) {
+      if (currentUser && onLoginScreen) {
+        console.log('User signed in, navigating to tabs');
         router.replace('/(tabs)');
+      }
+      // If user is signed out and in tabs, navigate to login immediately
+      else if (!currentUser && inTabs) {
+        console.log('User signed out in tabs, navigating to login from auth listener');
+        // Use a small delay to ensure the navigation happens
+        setTimeout(() => {
+          console.log('Navigating to login from auth listener');
+          // Try navigating to root - this should work from the auth listener
+          router.replace('/');
+        }, 100);
       }
     });
 
     // Clean up listener when component unmounts
     return () => unsubscribe();
-  }, [segments, router]);
+  }, [segments, router, pathname]);
+  
+  // Check if we should show tabs (only if user is signed in or not in tabs)
+  const inTabs = segments[0] === '(tabs)';
+  const shouldShowTabs = user || !inTabs;
 
   // Stack provides a navigation stack (like a stack of cards).
   // Each screen can navigate to another, and you can go back.
@@ -136,7 +161,10 @@ function RootLayoutNav() {
         <Stack.Screen name="index" options={{ headerShown: false }} />
         
         {/* Main tabs screen - no header (tabs have their own headers) */}
-        <Stack.Screen name="(tabs)" options={{ headerShown: false }} />
+        {/* Only show tabs if user is signed in or we're not in tabs */}
+        {shouldShowTabs && (
+          <Stack.Screen name="(tabs)" options={{ headerShown: false }} />
+        )}
         
         {/* League screens - no header (handled by league layout file) */}
         <Stack.Screen name="league" options={{ headerShown: false }} />

@@ -190,13 +190,38 @@ service cloud.firestore {
     }
     
     /**
+     * Helper Function: Check if User is League Member
+     * 
+     * This function checks if the current user is an active member of a league.
+     * Used to allow league members to participate in auto-generating brackets.
+     */
+    function isLeagueMember(leagueId) {
+      return exists(/databases/$(database)/documents/leagueMembers/$(leagueId + '_' + currentUserId())) &&
+             get(/databases/$(database)/documents/leagueMembers/$(leagueId + '_' + currentUserId())).data.status == 'active';
+    }
+    
+    /**
+     * Helper Function: Check if User is League Owner or Admin
+     * 
+     * This function checks if the current user is the owner or an admin of a league.
+     */
+    function isLeagueOwnerOrAdmin(leagueId) {
+      return exists(/databases/$(database)/documents/leagues/$(leagueId)) &&
+             (get(/databases/$(database)/documents/leagues/$(leagueId)).data.ownerId == currentUserId() ||
+              currentUserId() in get(/databases/$(database)/documents/leagues/$(leagueId)).data.get('admins', []));
+    }
+    
+    /**
      * Tournament Matches Collection Rules
      * 
      * This collection stores individual matches in tournaments (who played who, scores, winners, etc.).
      * 
      * Rules:
      * - Any authenticated user can read matches (to view brackets)
-     * - Only league owners/admins can create/update/delete matches
+     * - League members can create matches (for auto-generation when joining tournaments)
+     * - League owners/admins can create/update/delete matches (for manual management)
+     * - League owners/admins can update matches (e.g., to record scores)
+     * - Only owners/admins can delete matches
      * 
      * Reference: https://firebase.google.com/docs/firestore/security/rules-conditions#access_other_documents
      */
@@ -205,24 +230,26 @@ service cloud.firestore {
       // This is needed so everyone can view the tournament bracket
       allow read: if isAuthenticated();
       
-      // Only owners/admins can create matches
-      // This prevents random users from creating fake matches
+      // Allow creation if:
+      // 1. User is a league member (for auto-generation), OR
+      // 2. User is owner/admin (for manual generation)
+      // This enables auto-generation when users join tournaments
       allow create: if isAuthenticated() && 
         exists(/databases/$(database)/documents/leagues/$(request.resource.data.leagueId)) &&
-        (get(/databases/$(database)/documents/leagues/$(request.resource.data.leagueId)).data.ownerId == currentUserId() ||
-         currentUserId() in get(/databases/$(database)/documents/leagues/$(request.resource.data.leagueId)).data.get('admins', []));
+        (isLeagueMember(request.resource.data.leagueId) ||
+         isLeagueOwnerOrAdmin(request.resource.data.leagueId));
       
       // Only owners/admins can update matches (e.g., to record scores)
+      // This prevents members from tampering with match results
       allow update: if isAuthenticated() && 
         exists(/databases/$(database)/documents/leagues/$(resource.data.leagueId)) &&
-        (get(/databases/$(database)/documents/leagues/$(resource.data.leagueId)).data.ownerId == currentUserId() ||
-         currentUserId() in get(/databases/$(database)/documents/leagues/$(resource.data.leagueId)).data.get('admins', []));
+        isLeagueOwnerOrAdmin(resource.data.leagueId);
       
       // Only owners/admins can delete matches
+      // This prevents accidental or malicious deletion
       allow delete: if isAuthenticated() && 
         exists(/databases/$(database)/documents/leagues/$(resource.data.leagueId)) &&
-        (get(/databases/$(database)/documents/leagues/$(resource.data.leagueId)).data.ownerId == currentUserId() ||
-         currentUserId() in get(/databases/$(database)/documents/leagues/$(resource.data.leagueId)).data.get('admins', []));
+        isLeagueOwnerOrAdmin(resource.data.leagueId);
     }
     
     /**

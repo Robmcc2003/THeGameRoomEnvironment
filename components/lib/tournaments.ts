@@ -1,7 +1,6 @@
 import { auth, db } from '../../FirebaseConfig';
 import { collection, query, where, getDocs, doc, getDoc, setDoc, serverTimestamp, updateDoc } from 'firebase/firestore';
 
-export type TournamentStatus = 'pending' | 'active' | 'completed';
 export type MatchStatus = 'pending' | 'in_progress' | 'completed';
 
 export type MatchResult = {
@@ -91,6 +90,10 @@ export async function joinTournament(leagueId: string): Promise<void> {
     joinedAt: serverTimestamp(), // When they joined (server timestamp is more accurate)
     addedBy: current.uid, // Who added them (themselves in this case)
   });
+
+  // Auto-generate brackets if conditions are met
+  // This makes the bracket tab always useful without manual intervention
+  await autoGenerateBracketIfNeeded(leagueId);
 }
 
 // Get Tournament Bracket
@@ -145,6 +148,164 @@ export async function getTournamentBracket(leagueId: string): Promise<Tournament
     rounds,
     currentRound: currentRound || 1,
   };
+}
+
+// Auto-generate bracket matches if conditions are met
+// This function automatically generates brackets when:
+// - Tournament format is set (single_elimination or double_elimination)
+// - There are at least 2 active members
+// - No matches exist yet
+// This makes the bracket tab always useful without manual intervention
+// @param leagueId - The unique ID of the league/tournament
+// @returns true if brackets were generated, false otherwise
+export async function autoGenerateBracketIfNeeded(leagueId: string): Promise<boolean> {
+  try {
+    // Get the league document
+    const leagueRef = doc(db, 'leagues', leagueId);
+    const leagueSnap = await getDoc(leagueRef);
+    
+    if (!leagueSnap.exists()) {
+      return false; // League doesn't exist
+    }
+
+    const leagueData = leagueSnap.data();
+    const tournamentFormat = leagueData.tournamentFormat;
+    
+    // Only auto-generate for bracket tournaments
+    if (tournamentFormat !== 'single_elimination' && tournamentFormat !== 'double_elimination') {
+      return false; // Not a bracket tournament
+    }
+
+    // Check if matches already exist
+    const existingMatchesQuery = query(
+      collection(db, 'tournamentMatches'),
+      where('leagueId', '==', leagueId)
+    );
+    const existingMatchesSnap = await getDocs(existingMatchesQuery);
+    if (existingMatchesSnap.size > 0) {
+      return false; // Matches already exist
+    }
+
+    // Get all active members (participants)
+    const membersQuery = query(
+      collection(db, 'leagueMembers'),
+      where('leagueId', '==', leagueId),
+      where('status', '==', 'active')
+    );
+    const membersSnap = await getDocs(membersQuery);
+    const members = membersSnap.docs.map(d => d.data());
+    
+    // Need at least 2 people to have a tournament
+    if (members.length < 2) {
+      return false; // Not enough participants yet
+    }
+
+    // All conditions met - generate brackets automatically
+    // Use the internal generation logic without permission checks
+    await generateBracketMatchesInternal(leagueId, tournamentFormat, members);
+    return true;
+  } catch (error) {
+    console.error('Error auto-generating bracket:', error);
+    return false; // Fail silently for auto-generation
+  }
+}
+
+// Internal bracket generation logic (without permission checks)
+// This is used by both manual and automatic generation
+async function generateBracketMatchesInternal(
+  leagueId: string, 
+  tournamentFormat: 'single_elimination' | 'double_elimination',
+  members: any[]
+): Promise<void> {
+  // Shuffle members for random seeding
+  const shuffledMembers = [...members].sort(() => Math.random() - 0.5);
+  
+  // Calculate how many rounds I need
+  const numParticipants = shuffledMembers.length;
+  const numRounds = Math.ceil(Math.log2(numParticipants));
+  
+  // Calculate how many matches I need in the first round
+  const firstRoundMatches = Math.floor(numParticipants / 2);
+  const byes = numParticipants - (firstRoundMatches * 2); // Players who get a free pass
+
+  // Create first round matches
+  let matchNumber = 1;
+  const matchesToCreate: any[] = [];
+
+  // Pair up players for the first round
+  for (let i = 0; i < firstRoundMatches; i++) {
+    const player1 = shuffledMembers[i * 2];
+    const player2 = shuffledMembers[i * 2 + 1];
+    
+    matchesToCreate.push({
+      leagueId,
+      round: 1,
+      matchNumber: matchNumber++,
+      player1Id: player1.userId,
+      player2Id: player2.userId,
+      status: 'pending' as MatchStatus,
+      createdAt: serverTimestamp(),
+    });
+  }
+
+  // Handle byes (players who get a free pass to the next round)
+  if (byes > 0) {
+    for (let i = 0; i < byes; i++) {
+      const player = shuffledMembers[firstRoundMatches * 2 + i];
+      matchesToCreate.push({
+        leagueId,
+        round: 1,
+        matchNumber: matchNumber++,
+        player1Id: player.userId,
+        player2Id: null, // No opponent = bye
+        status: 'completed' as MatchStatus,
+        result: {
+          winnerId: player.userId,
+          player1Score: 1,
+          player2Score: 0,
+        },
+        completedAt: serverTimestamp(),
+        createdAt: serverTimestamp(),
+      });
+    }
+  }
+
+  // Create placeholder matches for subsequent rounds
+  if (tournamentFormat === 'single_elimination') {
+    let currentRoundMatches = firstRoundMatches + byes;
+    let currentRound = 2;
+    
+    while (currentRoundMatches > 1) {
+      const nextRoundMatches = Math.ceil(currentRoundMatches / 2);
+      let nextMatchNumber = 1;
+      
+      for (let i = 0; i < nextRoundMatches; i++) {
+        matchesToCreate.push({
+          leagueId,
+          round: currentRound,
+          matchNumber: nextMatchNumber++,
+          player1Id: null,
+          player2Id: null,
+          status: 'pending' as MatchStatus,
+          createdAt: serverTimestamp(),
+        });
+      }
+      
+      currentRoundMatches = nextRoundMatches;
+      currentRound++;
+    }
+  }
+
+  // Save all matches to Firestore
+  const matchesCollection = collection(db, 'tournamentMatches');
+  for (const matchData of matchesToCreate) {
+    const matchId = `${leagueId}_r${matchData.round}_m${matchData.matchNumber}`;
+    const matchRef = doc(matchesCollection, matchId);
+    await setDoc(matchRef, {
+      id: matchId,
+      ...matchData,
+    });
+  }
 }
 
 // Generate Bracket Matches
@@ -214,119 +375,8 @@ export async function generateBracketMatches(leagueId: string): Promise<void> {
     throw new Error('Need at least 2 participants to generate matches.');
   }
 
-  // Shuffle members for random seeding
-  // This makes the tournament fair by randomizing who plays who
-  // Math.random() docs: https://developer.mozilla.org/en-US/docs/Web/JavaScript/Reference/Global_Objects/Math/random
-  const shuffledMembers = [...members].sort(() => Math.random() - 0.5);
-  
-  // Calculate how many rounds I need
-  // For a single-elimination tournament, if you have 8 players, you need 3 rounds:
-  // Round 1: 8 players -> 4 matches -> 4 winners
-  // Round 2: 4 players -> 2 matches -> 2 winners
-  // Round 3: 2 players -> 1 match -> 1 winner
-  // Formula: log2(number of players), rounded up
-  // Math.log2() docs: https://developer.mozilla.org/en-US/docs/Web/JavaScript/Reference/Global_Objects/Math/log2
-  const numParticipants = shuffledMembers.length;
-  const numRounds = Math.ceil(Math.log2(numParticipants));
-  
-  // Calculate how many matches I need in the first round
-  // If I have 8 players, I need 4 matches (8 / 2 = 4)
-  // If I have 7 players, I need 3 matches (7 / 2 = 3, with 1 bye)
-  const firstRoundMatches = Math.floor(numParticipants / 2);
-  const byes = numParticipants - (firstRoundMatches * 2); // Players who get a free pass
-
-  // Create first round matches
-  let matchNumber = 1;
-  const matchesToCreate: any[] = [];
-
-  // Pair up players for the first round
-  // Player 1 vs Player 2, Player 3 vs Player 4, etc.
-  for (let i = 0; i < firstRoundMatches; i++) {
-    const player1 = shuffledMembers[i * 2];
-    const player2 = shuffledMembers[i * 2 + 1];
-    
-    // Create a match between these two players
-    matchesToCreate.push({
-      leagueId,
-      round: 1, // First round
-      matchNumber: matchNumber++,
-      player1Id: player1.userId,
-      player2Id: player2.userId,
-      status: 'pending' as MatchStatus, // Match hasn't been played yet
-      createdAt: serverTimestamp(), // When this match was created
-    });
-  }
-
-  // Handle byes (players who get a free pass to the next round)
-  // This happens when there's an odd number of players
-  // Example: 7 players = 3 matches + 1 bye
-  if (byes > 0) {
-    for (let i = 0; i < byes; i++) {
-      const player = shuffledMembers[firstRoundMatches * 2 + i];
-      // Create a "bye" match where the player automatically wins
-      matchesToCreate.push({
-        leagueId,
-        round: 1,
-        matchNumber: matchNumber++,
-        player1Id: player.userId,
-        player2Id: null, // No opponent = bye
-        status: 'completed' as MatchStatus, // Already completed (they won automatically)
-        result: {
-          winnerId: player.userId, // They're the winner
-          player1Score: 1,
-          player2Score: 0,
-        },
-        completedAt: serverTimestamp(),
-        createdAt: serverTimestamp(),
-      });
-    }
-  }
-
-  // Create placeholder matches for subsequent rounds
-  // These matches don't have players yet - they'll be filled as winners advance
-  // Example: Round 2 will have matches for "Winner of Match 1 vs Winner of Match 2"
-  if (tournamentFormat === 'single_elimination') {
-    let currentRoundMatches = firstRoundMatches + byes; // How many players advance from round 1
-    let currentRound = 2; // Start with round 2
-    
-    // Keep creating rounds until I get to the final (1 match left)
-    while (currentRoundMatches > 1) {
-      // Each round has half as many matches as the previous round
-      const nextRoundMatches = Math.ceil(currentRoundMatches / 2);
-      let nextMatchNumber = 1;
-      
-      // Create all matches for this round
-      for (let i = 0; i < nextRoundMatches; i++) {
-        matchesToCreate.push({
-          leagueId,
-          round: currentRound,
-          matchNumber: nextMatchNumber++,
-          player1Id: null, // Will be filled by winner of previous round match
-          player2Id: null, // Will be filled by winner of previous round match
-          status: 'pending' as MatchStatus,
-          createdAt: serverTimestamp(),
-        });
-      }
-      
-      // Move to the next round
-      currentRoundMatches = nextRoundMatches;
-      currentRound++;
-    }
-  }
-
-  // Save all matches to Firestore
-  // I create each match as a separate document in the tournamentMatches collection
-  const matchesCollection = collection(db, 'tournamentMatches');
-  for (const matchData of matchesToCreate) {
-    // Create a unique ID for each match: leagueId_round_matchNumber
-    // Example: "league123_r1_m1" (league 123, round 1, match 1)
-    const matchId = `${leagueId}_r${matchData.round}_m${matchData.matchNumber}`;
-    const matchRef = doc(matchesCollection, matchId);
-    await setDoc(matchRef, {
-      id: matchId,
-      ...matchData,
-    });
-  }
+  // Use the internal generation logic
+  await generateBracketMatchesInternal(leagueId, tournamentFormat, members);
 }
 
 // Get Tournament Standings
@@ -399,6 +449,343 @@ export async function getTournamentStandings(leagueId: string) {
     // If wins are equal, compare by win rate
     return b.winRate - a.winRate; // Higher win rate = better
   });
+}
+
+// Update Match Score
+// This function updates a match with scores and determines the winner.
+// @param matchId - The unique ID of the match
+// @param player1Score - Score for player 1
+// @param player2Score - Score for player 2
+// @throws Error if user not signed in, not owner/admin, match not found, or invalid scores
+export async function updateMatchScore(
+  matchId: string,
+  player1Score: number,
+  player2Score: number
+): Promise<void> {
+  const current = auth.currentUser;
+  if (!current) throw new Error('You must be signed in.');
+
+  // Get the match document
+  const matchRef = doc(db, 'tournamentMatches', matchId);
+  const matchSnap = await getDoc(matchRef);
+  
+  if (!matchSnap.exists()) {
+    throw new Error('Match not found.');
+  }
+
+  const matchData = matchSnap.data();
+  const leagueId = matchData.leagueId;
+  const currentRound = matchData.round;
+  const currentMatchNumber = matchData.matchNumber;
+  const oldWinnerId = matchData.result?.winnerId;
+
+  // Get the league to check permissions
+  const leagueRef = doc(db, 'leagues', leagueId);
+  const leagueSnap = await getDoc(leagueRef);
+  
+  if (!leagueSnap.exists()) {
+    throw new Error('League not found.');
+  }
+
+  const leagueData = leagueSnap.data();
+  
+  // Check if the user is the owner or an admin
+  const isOwner = leagueData.ownerId === current.uid;
+  const isAdmin = Array.isArray(leagueData.admins) && leagueData.admins.includes(current.uid);
+  
+  // Also check if user is an admin in their profile
+  const userRef = doc(db, 'users', current.uid);
+  const userSnap = await getDoc(userRef);
+  const userData = userSnap.exists() ? userSnap.data() : null;
+  const isUserAdmin = userData?.role === 'admin';
+  
+  if (!isOwner && !isAdmin && !isUserAdmin) {
+    throw new Error('Only league owners, admins, or system admins can update match scores.');
+  }
+
+  // Validate scores
+  if (player1Score < 0 || player2Score < 0 || !Number.isInteger(player1Score) || !Number.isInteger(player2Score)) {
+    throw new Error('Scores must be non-negative integers.');
+  }
+
+  // Determine winner
+  let winnerId: string | null = null;
+  if (player1Score > player2Score) {
+    winnerId = matchData.player1Id;
+  } else if (player2Score > player1Score) {
+    winnerId = matchData.player2Id;
+  }
+  // If scores are equal, winner is null (tie - may need tie-breaker logic later)
+
+  // If there was a previous winner and it's different from the new winner, 
+  // we need to cascade the removal through ALL subsequent rounds
+  if (oldWinnerId && oldWinnerId !== winnerId) {
+    await cascadeRemoveWinner(leagueId, currentRound, currentMatchNumber, oldWinnerId);
+  }
+
+  // Update the match
+  await updateDoc(matchRef, {
+    status: 'completed' as MatchStatus,
+    result: {
+      player1Score,
+      player2Score,
+      winnerId: winnerId || undefined,
+    },
+    completedAt: serverTimestamp(),
+    updatedAt: serverTimestamp(),
+  });
+
+  // Advance winner to next round if there is a winner, and cascade through all rounds
+  if (winnerId) {
+    await cascadeAdvanceWinner(leagueId, currentRound, currentMatchNumber, winnerId);
+  }
+}
+
+// Cascade Remove Winner Through All Rounds
+// This function removes a player from all subsequent rounds when a match score is changed.
+// It cascades through the entire bracket to ensure consistency.
+// @param leagueId - The league ID
+// @param currentRound - The round number of the match
+// @param currentMatchNumber - The match number in the current round
+// @param oldWinnerId - The user ID of the old winner to remove
+async function cascadeRemoveWinner(
+  leagueId: string,
+  currentRound: number,
+  currentMatchNumber: number,
+  oldWinnerId: string
+): Promise<void> {
+  let round = currentRound + 1;
+  let matchNumber = Math.ceil(currentMatchNumber / 2);
+  let isPlayer1 = currentMatchNumber % 2 === 1;
+  
+  // Cascade through all subsequent rounds
+  while (true) {
+    const nextMatchId = `${leagueId}_r${round}_m${matchNumber}`;
+    const nextMatchRef = doc(db, 'tournamentMatches', nextMatchId);
+    const nextMatchSnap = await getDoc(nextMatchRef);
+    
+    if (!nextMatchSnap.exists()) {
+      break; // No more rounds
+    }
+    
+    const nextMatchData = nextMatchSnap.data();
+    let shouldRemove = false;
+    const updateData: any = {
+      updatedAt: serverTimestamp(),
+    };
+    
+    // Check if old winner is in this match
+    if (isPlayer1 && nextMatchData.player1Id === oldWinnerId) {
+      updateData.player1Id = null;
+      shouldRemove = true;
+    } else if (!isPlayer1 && nextMatchData.player2Id === oldWinnerId) {
+      updateData.player2Id = null;
+      shouldRemove = true;
+    }
+    
+    if (shouldRemove) {
+      // If this match was completed, we need to cascade remove its winner from further rounds
+      if (nextMatchData.status === 'completed' && nextMatchData.result?.winnerId === oldWinnerId) {
+        // Clear the match result since the winner is being removed
+        updateData.status = 'pending';
+        updateData.result = null;
+        updateData.completedAt = null;
+        
+        // Recursively remove this winner from all further rounds
+        const removedWinnerId = nextMatchData.result.winnerId;
+        await cascadeRemoveWinner(leagueId, round, matchNumber, removedWinnerId);
+      } else if (nextMatchData.status === 'completed') {
+        // Match was completed but with a different winner - still need to invalidate
+        // because one of the players changed, so the result might be wrong
+        updateData.status = 'pending';
+        updateData.result = null;
+        updateData.completedAt = null;
+        
+        // Also remove the winner of this match from further rounds
+        // since the match participants changed, the result is invalid
+        const completedWinnerId = nextMatchData.result?.winnerId;
+        if (completedWinnerId) {
+          await cascadeRemoveWinner(leagueId, round, matchNumber, completedWinnerId);
+        }
+      }
+      
+      await updateDoc(nextMatchRef, updateData);
+      
+      // Continue to next round to check if old winner appears there
+      isPlayer1 = matchNumber % 2 === 1;
+      matchNumber = Math.ceil(matchNumber / 2);
+      round++;
+    } else {
+      // Old winner not found in this position, stop cascading
+      break;
+    }
+  }
+}
+
+// Cascade Advance Winner Through All Rounds
+// This function automatically advances the winner of a match through ALL subsequent rounds.
+// It cascades through the entire bracket, recalculating winners for all affected matches.
+// @param leagueId - The league ID
+// @param currentRound - The round number of the completed match
+// @param currentMatchNumber - The match number in the current round
+// @param winnerId - The user ID of the winner
+async function cascadeAdvanceWinner(
+  leagueId: string,
+  currentRound: number,
+  currentMatchNumber: number,
+  winnerId: string
+): Promise<void> {
+  let round = currentRound + 1;
+  let matchNumber = Math.ceil(currentMatchNumber / 2);
+  let isPlayer1 = currentMatchNumber % 2 === 1;
+  
+  // Cascade through all subsequent rounds
+  while (true) {
+    const nextMatchId = `${leagueId}_r${round}_m${matchNumber}`;
+    const nextMatchRef = doc(db, 'tournamentMatches', nextMatchId);
+    const nextMatchSnap = await getDoc(nextMatchRef);
+    
+    // If next round match doesn't exist, we've reached the final
+    if (!nextMatchSnap.exists()) {
+      break; // No more rounds
+    }
+    
+    const nextMatchData = nextMatchSnap.data();
+    
+    // Check if players in this match have changed
+    const playerChanged = (isPlayer1 && nextMatchData.player1Id !== winnerId) || 
+                          (!isPlayer1 && nextMatchData.player2Id !== winnerId);
+    
+    // If players changed and match was completed, invalidate the result
+    if (playerChanged && nextMatchData.status === 'completed') {
+      const oldCompletedWinnerId = nextMatchData.result?.winnerId;
+      
+      // Clear the match result since players changed
+      await updateDoc(nextMatchRef, {
+        status: 'pending' as MatchStatus,
+        result: null,
+        completedAt: null,
+        updatedAt: serverTimestamp(),
+      });
+      
+      // If there was a winner, remove them from further rounds
+      if (oldCompletedWinnerId) {
+        await cascadeRemoveWinner(leagueId, round, matchNumber, oldCompletedWinnerId);
+      }
+    }
+    
+    // Update the next match with the winner
+    const updateData: any = {
+      updatedAt: serverTimestamp(),
+    };
+    
+    if (isPlayer1) {
+      updateData.player1Id = winnerId;
+    } else {
+      updateData.player2Id = winnerId;
+    }
+    
+    await updateDoc(nextMatchRef, updateData);
+    
+    // Check if both players are now set in this match
+    const updatedNextMatchSnap = await getDoc(nextMatchRef);
+    const updatedNextMatchData = updatedNextMatchSnap.data();
+    
+    if (updatedNextMatchData.player1Id && updatedNextMatchData.player2Id) {
+      // Both players are set - check if match is completed
+      if (updatedNextMatchData.status === 'completed' && updatedNextMatchData.result?.winnerId) {
+        // Match already has a winner - advance that winner to the next round
+        const nextWinnerId = updatedNextMatchData.result.winnerId;
+        // Continue cascading with this winner
+        isPlayer1 = matchNumber % 2 === 1;
+        matchNumber = Math.ceil(matchNumber / 2);
+        round++;
+        winnerId = nextWinnerId;
+      } else {
+        // Match not completed yet - stop here (waiting for match to be played)
+        break;
+      }
+    } else {
+      // Only one player set - stop here (waiting for other player)
+      break;
+    }
+  }
+}
+
+// Get User Progress in a League
+// This function gets a specific user's progress and position in a tournament/league.
+// It's optimized to only calculate stats for one user rather than all members.
+// @param leagueId - The unique ID of the league/tournament
+// @param userId - The unique ID of the user
+// @returns Object with user's position, wins, losses, win rate, and match count, or null if not found
+export async function getUserProgress(leagueId: string, userId: string): Promise<{
+  position: number | null;
+  wins: number;
+  losses: number;
+  winRate: number;
+  totalMatches: number;
+  upcomingMatches: number;
+  completedMatches: number;
+} | null> {
+  // Get all standings to find user's position
+  const standings = await getTournamentStandings(leagueId);
+  const userStanding = standings.find(s => s.userId === userId);
+  
+  if (!userStanding) {
+    // User might not be a member or no matches exist yet
+    // Check if user is a member
+    const memberQuery = query(
+      collection(db, 'leagueMembers'),
+      where('leagueId', '==', leagueId),
+      where('userId', '==', userId),
+      where('status', '==', 'active')
+    );
+    const memberSnap = await getDocs(memberQuery);
+    
+    if (memberSnap.empty) {
+      return null; // User is not a member
+    }
+    
+    // User is a member but has no matches yet
+    return {
+      position: null,
+      wins: 0,
+      losses: 0,
+      winRate: 0,
+      totalMatches: 0,
+      upcomingMatches: 0,
+      completedMatches: 0,
+    };
+  }
+
+  // Get all matches (not just completed) to count upcoming matches
+  const allMatchesQuery = query(
+    collection(db, 'tournamentMatches'),
+    where('leagueId', '==', leagueId)
+  );
+  const allMatchesSnap = await getDocs(allMatchesQuery);
+  const allMatches = allMatchesSnap.docs.map(d => d.data() as any);
+  
+  // Filter user's matches
+  const userMatches = allMatches.filter(
+    m => m.player1Id === userId || m.player2Id === userId
+  );
+  
+  const upcomingMatches = userMatches.filter(m => m.status === 'pending' || m.status === 'in_progress').length;
+  const completedMatches = userMatches.filter(m => m.status === 'completed').length;
+  
+  // Find position in standings
+  const position = standings.findIndex(s => s.userId === userId) + 1;
+
+  return {
+    position: position > 0 ? position : null,
+    wins: userStanding.wins,
+    losses: userStanding.losses,
+    winRate: userStanding.winRate,
+    totalMatches: userMatches.length,
+    upcomingMatches,
+    completedMatches,
+  };
 }
 
 // Add Dummy Tournament Data created ysing chatgpt https://chatgpt.com/share/691d9c29-51dc-8007-89a4-3ece7fb2cada
