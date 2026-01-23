@@ -1,3 +1,5 @@
+// League Layout
+// I configure the navigation stack for league-related screens
 import { Stack } from 'expo-router';
 
 export default function LeagueLayout() {

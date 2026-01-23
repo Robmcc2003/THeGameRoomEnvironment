@@ -1,29 +1,17 @@
-
-// References:
-// - Firestore Real-time Listeners: https://firebase.google.com/docs/firestore/query-data/listen
-// - React Hooks: https://react.dev/reference/react
-// - React useRef: https://react.dev/reference/react/useRef
-// - Expo Router: https://docs.expo.dev/router/introduction/
+// My Leagues Screen
+// I display user's leagues with real-time updates and allow league creation.
+/* Real-time listener code (lines 92-166) adapted from Firestore documentation - https://firebase.google.com/docs/firestore/query-data/listen */
+/* I modified the listener structure to handle multiple leagues and cleanup */
 
 import { useRouter } from 'expo-router';
 import { onAuthStateChanged } from 'firebase/auth';
-
-// Firestore real-time docs: https://firebase.google.com/docs/firestore/query-data/listen
 import { Unsubscribe, addDoc, collection, doc, getDoc, onSnapshot as onDocSnapshot, onSnapshot, query,
   serverTimestamp, setDoc, where,
 } from 'firebase/firestore';
-
-// React hooks docs: https://react.dev/reference/react
 import React, { useEffect, useRef, useState } from 'react';
-
-// Import React Native UI components
 import { ActivityIndicator, Alert, FlatList, SafeAreaView, ScrollView, TextInput, TouchableOpacity,
 } from 'react-native';
-
-// Import FB
 import { auth, db } from '../../FirebaseConfig';
-
-// Import custom components from other files
 import Logo from '../../components/Logo';
 import { Text, View } from '../../components/Themed';
 import { styles } from '../../components/style.four';
@@ -31,15 +19,13 @@ import { getUserProgress } from '../../components/lib/tournaments';
 import { useColorScheme } from '../../components/useColorScheme';
 import Colors from '../../constants/Colors';
 
-// This defines the structure of a league object for this screen.
 type League = { 
-  id: string; // Unique league identifier
-  name: string; // League name
-  game?: string | null; // Game being played (optional)
-  tournamentFormat?: 'normal_league' | 'single_elimination' | 'double_elimination' | 'round_robin' | null; // Tournament type
+  id: string;
+  name: string;
+  game?: string | null;
+  tournamentFormat?: 'normal_league' | 'single_elimination' | 'double_elimination' | 'round_robin' | null;
 };
 
-// User progress in a league
 type LeagueProgress = {
   position: number | null;
   wins: number;
@@ -50,52 +36,27 @@ type LeagueProgress = {
   completedMatches: number;
 };
 
-// Tab Four Screen Component
-// This is the "My Leagues" screen where users can create and view their own leagues.
 export default function TabFourScreen() {
   const router = useRouter();
 
-  // Component State
-  // useState() creates state variables that trigger re-renders when changed.
-  // React useState docs: https://react.dev/reference/react/useState
-  const [leagueName, setLeagueName] = useState(''); // League name input
-  const [game, setGame] = useState(''); // Game name input
-  const [uid, setUid] = useState<string | null>(auth.currentUser?.uid ?? null); // Current user ID
-  const [loadingLeagues, setLoadingLeagues] = useState(true); // Loading state
-  const [myLeagues, setMyLeagues] = useState<League[]>([]); // List of user's leagues
-  const [leagueProgress, setLeagueProgress] = useState<Record<string, LeagueProgress | null>>({}); // Progress for each league
-  const [loadingProgress, setLoadingProgress] = useState<Record<string, boolean>>({}); // Loading state for progress
+  const [leagueName, setLeagueName] = useState('');
+  const [game, setGame] = useState('');
+  const [uid, setUid] = useState<string | null>(auth.currentUser?.uid ?? null);
+  const [loadingLeagues, setLoadingLeagues] = useState(true);
+  const [myLeagues, setMyLeagues] = useState<League[]>([]);
+  const [leagueProgress, setLeagueProgress] = useState<Record<string, LeagueProgress | null>>({});
+  const [loadingProgress, setLoadingProgress] = useState<Record<string, boolean>>({});
   
-  // League Listeners Reference
-  // useRef() stores a mutable value that doesn't trigger re-renders.
-  // I use it to store unsubscribe functions for each league listener.
-  // This allows me to clean up listeners when leagues are removed.
-  // React useRef docs: https://react.dev/reference/react/useRef
   const leagueUnsubsRef = useRef<Record<string, Unsubscribe>>({});
 
-  // This effect listens for authentication state changes.
-  // When the user signs in or out, it updates the uid state.
-  // React useEffect docs: https://react.dev/reference/react/useEffect
-  // Firebase Auth state listener: https://firebase.google.com/docs/auth/web/manage-users#get_the_currently_signed-in_user
   useEffect(() => {
     const unsub = onAuthStateChanged(auth, (user) => setUid(user?.uid ?? null));
-    return () => unsub(); // Clean up listener on unmount
+    return () => unsub();
   }, []);
 
-  // This is the core real-time functionality of this screen.
-  // It:
-  // 1. Listens to the user's league memberships
-  // 2. For each league, sets up a real-time listener
-  // 3. Automatically updates when leagues change
-  // 4. Cleans up listeners when user leaves leagues
-  // Firestore onSnapshot docs: https://firebase.google.com/docs/firestore/query-data/listen
   useEffect(() => {
-    // This function stops all league listeners and clears the reference.
-    // It's called when the user signs out or when cleaning up.
     const cleanupAllLeagueListeners = () => {
-      // Unsubscribe from all league listeners
       Object.values(leagueUnsubsRef.current).forEach((unsub) => unsub?.());
-      // Clear the reference
       leagueUnsubsRef.current = {};
     };
 
@@ -190,7 +151,6 @@ export default function TabFourScreen() {
         });
       },
       (error) => {
-        console.error('Membership listener error:', error);
         setLoadingLeagues(false);
       }
     );
@@ -214,7 +174,6 @@ export default function TabFourScreen() {
       const progress = await getUserProgress(leagueId, userId);
       setLeagueProgress(prev => ({ ...prev, [leagueId]: progress }));
     } catch (error) {
-      console.error(`Failed to load progress for league ${leagueId}:`, error);
       setLeagueProgress(prev => ({ ...prev, [leagueId]: null }));
     } finally {
       setLoadingProgress(prev => ({ ...prev, [leagueId]: false }));
@@ -280,7 +239,6 @@ export default function TabFourScreen() {
         params: { leagueId: leagueRef.id },
       });
     } catch (error: any) {
-      console.error('Failed to create league:', error);
       Alert.alert('Error', 'Failed to create league: ' + (error?.message || 'Unknown error'));
     }
   };

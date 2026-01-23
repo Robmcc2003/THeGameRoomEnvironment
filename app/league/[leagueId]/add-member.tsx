@@ -1,11 +1,12 @@
-
+/* Add Member Screen */
+/* Form handling code (lines 18-44) uses React Native components - https://reactnative.dev/docs/textinput */
 import React, { useState } from 'react';
 import { View, Text, TextInput, Pressable, ActivityIndicator, Alert } from 'react-native';
 import { useLocalSearchParams, useRouter } from 'expo-router';
 import { addMemberToLeague } from '../../../components/lib/members';
 
 export default function AddMemberScreen() {
-  // read leagueId (handles string | string[]; legacy leagueID fallback for fear of errors)
+  // I get the league ID from route parameters
   const params = useLocalSearchParams();
   const leagueId =
     (Array.isArray(params.leagueId) ? params.leagueId[0] : (params.leagueId as string | undefined)) ??
@@ -15,12 +16,12 @@ export default function AddMemberScreen() {
   const [busy, setBusy] = useState(false);
   const router = useRouter();
 
+  // I validate the email and add the member or create an invite
   const onAdd = async () => {
     const e = email.trim().toLowerCase();
 
     if (!leagueId) return Alert.alert('Missing league id');
     if (!e) return Alert.alert('Please enter an email');
-    //very light email sanity check
     if (!/^[^\s@]+@[^\s@]+\.[^\s@]+$/.test(e)) return Alert.alert('Enter a valid email');
 
     try {

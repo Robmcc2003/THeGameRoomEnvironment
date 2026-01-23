@@ -43,12 +43,12 @@ export default function TabLayout() {
         }}
       />
       
-      {/* Tab 3: My Badges screen (placeholder) */}
+      {/* Tab 3: Profile screen - User stats and tournament history */}
       <Tabs.Screen
         name="three"
         options={{
-          title: 'My Badges',
-          tabBarIcon: ({ color }) => <TabBarIcon name="star" color={color} />,
+          title: 'Profile',
+          tabBarIcon: ({ color }) => <TabBarIcon name="user" color={color} />,
         }}
       />
       

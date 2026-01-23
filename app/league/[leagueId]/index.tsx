@@ -1,7 +1,7 @@
 // League Detail Screen
-// This screen displays detailed information about a league, including tournament settings, members, and invites.
-// Owners and admins can manage members, edit settings, and generate tournament brackets.
-
+// I display league information, members, and invites. Owners and admins can manage members and settings.
+/* League data fetching (lines 150-163) uses Firestore getDoc - https://firebase.google.com/docs/firestore/query-data/get-data */
+/* FlatList component from React Native - https://reactnative.dev/docs/flatlist */
 import { useLocalSearchParams, useNavigation, useRouter } from 'expo-router';
 import { Stack } from 'expo-router/stack';
 import { doc, getDoc } from 'firebase/firestore';
@@ -20,8 +20,6 @@ import { addDummyTournamentData, generateBracketMatches, joinTournament } from '
 import { useColorScheme } from '../../../components/useColorScheme';
 import Colors from '../../../constants/Colors';
 
-// League document type definition
-// This defines the structure of a league document from Firestore.
 type LeagueDoc = {
   name: string;
   game?: string | null;
@@ -44,8 +42,6 @@ type LeagueDoc = {
   tieBreakerRules?: string | null;
 };
 
-// Member row type definition
-// This defines the structure of a member row in the members list.
 type MemberRow = {
   id: string;
   leagueId: string;
@@ -56,8 +52,6 @@ type MemberRow = {
   photoURL?: string | null;
 };
 
-// Invite row type definition
-// This defines the structure of an invite row in the members list.
 type InviteRow = {
   id: string;
   leagueId: string;
@@ -68,12 +62,11 @@ type InviteRow = {
   resentAt?: any;
 };
 
-// Unified row type for listing both members and invites
-// I use this to combine members and invites into a single list.
 type Row =
   | ({ kind: 'member' } & MemberRow)
   | ({ kind: 'invite' } & InviteRow);
 export default function LeagueDetailScreen() {
+  // I get the league ID from the route parameters
   const params = useLocalSearchParams();
   const leagueId =
     (Array.isArray(params.leagueId) ? params.leagueId[0] : (params.leagueId as string | undefined)) ??
@@ -82,8 +75,7 @@ export default function LeagueDetailScreen() {
   const router = useRouter();
   const navigation = useNavigation();
   
-  // Handle back button navigation
-  // This function navigates back or to the leagues tab if there's no back history.
+  // I handle navigation back, falling back to the My Leagues tab if there's no history
   const handleBack = useCallback(() => {
     if (router.canGoBack()) {
       router.back();
@@ -108,17 +100,16 @@ export default function LeagueDetailScreen() {
   const [rows, setRows] = useState<Row[]>([]); // Combined list of members and invites
   const [actioningId, setActioningId] = useState<string | null>(null); // ID of item currently being acted upon
 
-  // User permissions and status
+  // I check the current user's permissions and membership status
   const uid = auth.currentUser?.uid ?? null;
-  const isOwner = !!(uid && league?.ownerId && String(uid) === String(league.ownerId)); // Check if current user is the league owner
-  const isAdmin = !!(uid && league?.admins && Array.isArray(league.admins) && league.admins.includes(uid)); // Check if current user is an admin
-  const canManageMembers = isOwner || isAdmin; // Check if user can manage members
-  const isMember = !!(uid && rows.some(r => r.kind === 'member' && (r as MemberRow).userId === uid)); // Check if current user is a member
+  const isOwner = !!(uid && league?.ownerId && String(uid) === String(league.ownerId));
+  const isAdmin = !!(uid && league?.admins && Array.isArray(league.admins) && league.admins.includes(uid));
+  const canManageMembers = isOwner || isAdmin;
+  const isMember = !!(uid && rows.some(r => r.kind === 'member' && (r as MemberRow).userId === uid));
 
-  const [deleting, setDeleting] = useState(false); // Loading state for deleting league
+  const [deleting, setDeleting] = useState(false);
 
-  // Handle league deletion
-  // This function shows a confirmation dialog and deletes the league if confirmed.
+  // I handle league deletion with a confirmation dialog
   const onDeleteLeague = useCallback(() => {
     if (!leagueId) return;
     Alert.alert(
@@ -145,8 +136,7 @@ export default function LeagueDetailScreen() {
     );
   }, [leagueId, router]);
 
-  // Load league data from Firestore
-  // This function fetches the league document and updates the state.
+  // I load the league data from Firestore
   const loadLeague = useCallback(async () => {
     if (!leagueId) { setLoadingLeague(false); return; }
     try {
@@ -156,15 +146,12 @@ export default function LeagueDetailScreen() {
       if (!snap.exists()) { setLeague(null); router.back(); return; }
       setLeague(snap.data() as LeagueDoc);
     } catch (e) {
-      console.error('Failed to load league', e);
     } finally {
       setLoadingLeague(false);
     }
   }, [leagueId, router]);
 
-  // Load members and invites list
-  // This function fetches all members and invites, combines them, and sorts them alphabetically.
-  // I use useCallback to prevent unnecessary re-executions.
+  // I load members and invites, then combine and sort them alphabetically
   const loadList = useCallback(async () => {
     if (!leagueId) { setLoadingList(false); setRefreshing(false); return; }
     try {
@@ -172,6 +159,7 @@ export default function LeagueDetailScreen() {
       const [membersData, invitesData] = await Promise.all([listMembers(leagueId), listInvites(leagueId)]);
       const memberRows: Row[] = (membersData ?? []).map((m: any) => ({ kind: 'member', ...m }));
       const inviteRows: Row[] = (invitesData ?? []).map((i: any) => ({ kind: 'invite', ...i }));
+      // I sort members first, then invites, both alphabetically
       const unified = [...memberRows, ...inviteRows].sort((a, b) => {
         if (a.kind !== b.kind) return a.kind === 'member' ? -1 : 1;
         const aKey = a.kind === 'member' ? (a.displayName ?? a.userId ?? '') : a.emailLower;
@@ -181,41 +169,34 @@ export default function LeagueDetailScreen() {
 
       setRows(unified);
     } catch (e) {
-      console.error('Failed to load list', e);
     } finally {
       setLoadingList(false);
       setRefreshing(false);
     }
   }, [leagueId]);
 
-  // Load league and list data when component mounts
-  // I use useEffect to trigger data loading when the component mounts or dependencies change.
   useEffect(() => { loadLeague(); }, [loadLeague]);
   useEffect(() => { loadList(); }, [loadList]);
 
-  // Handle pull-to-refresh
-  // This function reloads both league data and members/invites list.
+  // I refresh both league data and member/invite lists
   const onRefresh = () => {
     setRefreshing(true);
     Promise.all([loadLeague(), loadList()]).finally(() => setRefreshing(false));
   };
 
-  // Navigate to add member screen
-  // This function navigates to the screen where owners/admins can add new members.
+  // I navigate to the add member screen
   const goToAddMember = useCallback(() => {
     if (!leagueId) return;
     router.push({ pathname: '/league/[leagueId]/add-member', params: { leagueId: String(leagueId) } });
   }, [router, leagueId]);
 
-  // Navigate to bracket screen
-  // This function navigates to the tournament bracket visualization screen.
+  // I navigate to the bracket screen
   const goToBracket = useCallback(() => {
     if (!leagueId) return;
     router.push({ pathname: '/league/[leagueId]/bracket', params: { leagueId: String(leagueId) } });
   }, [router, leagueId]);
 
-  // Handle joining the tournament
-  // This function allows users to join the tournament and shows a success message with option to view bracket.
+  // I handle joining a tournament and show a success message
   const onJoinTournament = useCallback(async () => {
     if (!leagueId) return;
     try {
@@ -237,8 +218,6 @@ export default function LeagueDetailScreen() {
     }
   }, [leagueId, loadList, router]);
 
-  // Handle generating bracket matches
-  // This function generates the tournament bracket matches for single or double elimination tournaments.
   const onGenerateMatches = useCallback(async () => {
     if (!leagueId) return;
     try {
@@ -259,8 +238,6 @@ export default function LeagueDetailScreen() {
     }
   }, [leagueId, router]);
 
-  // Handle adding dummy tournament data
-  // This function adds dummy players and matches for testing purposes. Only available to owners/admins.
   const onAddDummyData = useCallback(async () => {
     if (!leagueId) return;
     Alert.alert(
@@ -293,8 +270,7 @@ export default function LeagueDetailScreen() {
     );
   }, [leagueId, router]);
 
-  // Handle canceling an invite
-  // This function cancels a pending invite and refreshes the list.
+  // I cancel an invite and refresh the list
   const onCancelInvite = async (emailLower: string) => {
     if (!leagueId) return;
     try {
@@ -308,8 +284,7 @@ export default function LeagueDetailScreen() {
     }
   };
 
-  // Handle resending an invite
-  // This function resends an invite email and shows a success message.
+  // I resend an invite and show a confirmation
   const onResendInvite = async (emailLower: string) => {
     if (!leagueId) return;
     try {

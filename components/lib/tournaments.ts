@@ -7,6 +7,10 @@ export type MatchResult = {
   player1Score?: number;
   player2Score?: number;
   winnerId?: string;
+  verified?: boolean; // Whether the score has been verified by an admin
+  submittedBy?: string; // User ID who submitted the score
+  verifiedBy?: string; // User ID who verified the score
+  verifiedAt?: any; // Timestamp when verified
 };
 
 export type Match = {
@@ -28,7 +32,7 @@ export type TournamentBracket = {
   currentRound: number;
 };
 
-// Join a tournament/league
+/* User joining tournament code (lines 37-101) uses Firestore setDoc - https://firebase.google.com/docs/firestore/manage-data/add-data#set_a_document */
 export async function joinTournament(leagueId: string): Promise<void> {
   const current = auth.currentUser;
   if (!current) throw new Error('You must be signed in.');
@@ -42,7 +46,6 @@ export async function joinTournament(leagueId: string): Promise<void> {
 
   const leagueData = leagueSnap.data();
   
-  // Check if league is full
   if (leagueData.maxParticipants) {
     const membersQuery = query(
       collection(db, 'leagueMembers'),
@@ -56,49 +59,38 @@ export async function joinTournament(leagueId: string): Promise<void> {
     }
   }
 
-  // Check if the user is already a member
-  // I create a unique ID by combining leagueId and userId
   const memberId = `${leagueId}_${current.uid}`;
   const memberRef = doc(db, 'leagueMembers', memberId);
   const memberSnap = await getDoc(memberRef);
 
-  // If they're already a member, don't add them again
   if (memberSnap.exists()) {
     throw new Error('You are already a member of this tournament.');
   }
 
-  // Get the user's profile to include their username/display name
-  // This makes it easier to identify them in the tournament
   const userRef = doc(db, 'users', current.uid);
   const userSnap = await getDoc(userRef);
   const userData = userSnap.exists() ? userSnap.data() : null;
-  // Use displayName if available, otherwise username, otherwise email prefix, otherwise "Player"
   const displayName = userData?.displayName || userData?.username || current.email?.split('@')[0] || 'Player';
   const username = userData?.username || null;
 
-  // Add the user as a member of the league
-  // setDoc() creates or overwrites a document
-  // Firestore docs: https://firebase.google.com/docs/firestore/manage-data/add-data#set_a_document
   await setDoc(memberRef, {
     id: memberId,
     leagueId,
     userId: current.uid,
-    role: 'member', // They're a regular member (not admin)
-    status: 'active', // They're actively participating
-    displayName: displayName, // Their display name for the tournament
-    username: username, // Their username
-    joinedAt: serverTimestamp(), // When they joined (server timestamp is more accurate)
-    addedBy: current.uid, // Who added them (themselves in this case)
+    role: 'member',
+    status: 'active',
+    displayName: displayName,
+    username: username,
+    joinedAt: serverTimestamp(),
+    addedBy: current.uid,
   });
 
-  // Auto-generate brackets if conditions are met
-  // This makes the bracket tab always useful without manual intervention
   await autoGenerateBracketIfNeeded(leagueId);
 }
 
-// Get Tournament Bracket
-// This function retrieves all matches for a tournament and organizes them into a bracket.
-// It returns the matches sorted by round and match number, plus information about
+// I retrieve all matches for a tournament and organise them into a bracket.
+// i used chatgpt to adapt the logic for generating the tournament bracket from user data https://chatgpt.com/share/6973b4c9-23c8-8007-98f1-d6533d1d01fe
+// it returns the matches sorted by round and match number, plus information about
 // how many rounds there are and which round is currently active.
 // Reference: https://firebase.google.com/docs/firestore/query-data/get-data#get_multiple_documents_from_a_collection
 // @param leagueId - The unique ID of the league/tournament
@@ -111,38 +103,28 @@ export async function getTournamentBracket(leagueId: string): Promise<Tournament
     where('leagueId', '==', leagueId)
   );
   
-  // Execute the query and get all matching documents
   const matchesSnap = await getDocs(matchesQuery);
-  // Convert Firestore documents to my Match type
   const matches: Match[] = matchesSnap.docs.map(d => ({
-    id: d.id, // Document ID
-    ...(d.data() as any), // All other data (round, player1Id, etc.)
+    id: d.id,
+    ...(d.data() as any),
   }));
 
-  // If there are no matches, return null
   if (matches.length === 0) {
     return null;
   }
 
-  // Calculate the total number of rounds
-  // I find the highest round number among all matches
   const rounds = Math.max(...matches.map(m => m.round || 0), 0);
   
-  // Calculate which round is currently active
-  // This is the lowest round number that has incomplete matches
   const currentRound = Math.min(
     ...matches
-      .filter(m => m.status !== 'completed') // Only look at incomplete matches
-      .map(m => m.round || 0), // Get their round numbers
-    rounds // Default to total rounds if all are complete
+      .filter(m => m.status !== 'completed')
+      .map(m => m.round || 0),
+    rounds
   );
 
-  // Return the bracket with matches sorted by round, then by match number
   return {
     matches: matches.sort((a, b) => {
-      // Sort by round first (Round 1, then Round 2, etc.)
       if (a.round !== b.round) return a.round - b.round;
-      // Within the same round, sort by match number (Match 1, then Match 2, etc.)
       return (a.matchNumber || 0) - (b.matchNumber || 0);
     }),
     rounds,
@@ -150,43 +132,32 @@ export async function getTournamentBracket(leagueId: string): Promise<Tournament
   };
 }
 
-// Auto-generate bracket matches if conditions are met
-// This function automatically generates brackets when:
-// - Tournament format is set (single_elimination or double_elimination)
-// - There are at least 2 active members
-// - No matches exist yet
-// This makes the bracket tab always useful without manual intervention
-// @param leagueId - The unique ID of the league/tournament
-// @returns true if brackets were generated, false otherwise
+// I automatically generate brackets when tournament format is set, there are at least 2 members, and no matches exist yet.
 export async function autoGenerateBracketIfNeeded(leagueId: string): Promise<boolean> {
   try {
-    // Get the league document
     const leagueRef = doc(db, 'leagues', leagueId);
     const leagueSnap = await getDoc(leagueRef);
     
     if (!leagueSnap.exists()) {
-      return false; // League doesn't exist
+      return false;
     }
 
     const leagueData = leagueSnap.data();
     const tournamentFormat = leagueData.tournamentFormat;
     
-    // Only auto-generate for bracket tournaments
     if (tournamentFormat !== 'single_elimination' && tournamentFormat !== 'double_elimination') {
-      return false; // Not a bracket tournament
+      return false;
     }
 
-    // Check if matches already exist
     const existingMatchesQuery = query(
       collection(db, 'tournamentMatches'),
       where('leagueId', '==', leagueId)
     );
     const existingMatchesSnap = await getDocs(existingMatchesQuery);
     if (existingMatchesSnap.size > 0) {
-      return false; // Matches already exist
+      return false;
     }
 
-    // Get all active members (participants)
     const membersQuery = query(
       collection(db, 'leagueMembers'),
       where('leagueId', '==', leagueId),
@@ -195,23 +166,18 @@ export async function autoGenerateBracketIfNeeded(leagueId: string): Promise<boo
     const membersSnap = await getDocs(membersQuery);
     const members = membersSnap.docs.map(d => d.data());
     
-    // Need at least 2 people to have a tournament
     if (members.length < 2) {
-      return false; // Not enough participants yet
+      return false;
     }
 
-    // All conditions met - generate brackets automatically
-    // Use the internal generation logic without permission checks
     await generateBracketMatchesInternal(leagueId, tournamentFormat, members);
     return true;
   } catch (error) {
-    console.error('Error auto-generating bracket:', error);
-    return false; // Fail silently for auto-generation
+    return false;
   }
 }
 
-// Internal bracket generation logic (without permission checks)
-// This is used by both manual and automatic generation
+/* Internal bracket generation logic used by both manual and automatic generation */
 async function generateBracketMatchesInternal(
   leagueId: string, 
   tournamentFormat: 'single_elimination' | 'double_elimination',
@@ -308,18 +274,8 @@ async function generateBracketMatchesInternal(
   }
 }
 
-// Generate Bracket Matches
-// This function automatically creates all the matches for a tournament bracket.
-// It's used for single-elimination tournaments where players are eliminated after losing.
-// How it works:
-// 1. Gets all participants
-// 2. Randomly shuffles them (for fair seeding)
-// 3. Pairs them up for the first round
-// 4. Handles "byes" if there's an odd number of players (some players get a free pass)
-// 5. Creates placeholder matches for later rounds (these get filled as winners advance)
-// Tournament bracket theory: https://en.wikipedia.org/wiki/Single-elimination_tournament
-// @param leagueId - The unique ID of the league/tournament
-// @throws Error if user not signed in, not owner/admin, wrong tournament format, matches already exist, or not enough participants
+/* Bracket generation algorithm (lines 180-274) is based on single-elimination tournament theory - */
+/* I adapted the algorithm to handle byes and create placeholder matches for subsequent rounds */
 export async function generateBracketMatches(leagueId: string): Promise<void> {
   // Get the currently signed-in user
   const current = auth.currentUser;
@@ -405,8 +361,8 @@ export async function getTournamentStandings(leagueId: string) {
     ...(d.data() as any),
   }));
 
-  // Get all completed matches
-  // I only count completed matches because pending matches don't have winners yet
+  // Get all completed matches with verified scores
+  // Only count verified matches because unverified scores shouldn't affect standings
   const matchesQuery = query(
     collection(db, 'tournamentMatches'),
     where('leagueId', '==', leagueId),
@@ -416,18 +372,21 @@ export async function getTournamentStandings(leagueId: string) {
   const matchesSnap = await getDocs(matchesQuery);
   const matches = matchesSnap.docs.map(d => d.data() as any);
 
+  // Filter to only verified matches
+  const verifiedMatches = matches.filter(m => m.result?.verified === true);
+
   // Calculate standings for each member
   const standings = members.map(member => {
-    // Count wins: matches where this member is the winner
-    const wins = matches.filter(
+    // Count wins: verified matches where this member is the winner
+    const wins = verifiedMatches.filter(
       m => m.result?.winnerId === member.userId
     ).length;
     
-    // Count losses: matches where this member played but didn't win
-    const losses = matches.filter(
+    // Count losses: verified matches where this member played but didn't win
+    const losses = verifiedMatches.filter(
       m => (m.player1Id === member.userId || m.player2Id === member.userId) && // They played in this match
            m.result?.winnerId !== member.userId && // But they didn't win
-           m.status === 'completed' // And the match is completed
+           m.result?.verified === true // And the match is verified
     ).length;
 
     // Calculate win rate percentage
@@ -452,11 +411,8 @@ export async function getTournamentStandings(leagueId: string) {
 }
 
 // Update Match Score
-// This function updates a match with scores and determines the winner.
-// @param matchId - The unique ID of the match
-// @param player1Score - Score for player 1
-// @param player2Score - Score for player 2
-// @throws Error if user not signed in, not owner/admin, match not found, or invalid scores
+// This function allows any user to submit scores for matches they're in.
+// Scores are marked as unverified until an admin verifies them.
 export async function updateMatchScore(
   matchId: string,
   player1Score: number,
@@ -477,9 +433,94 @@ export async function updateMatchScore(
   const leagueId = matchData.leagueId;
   const currentRound = matchData.round;
   const currentMatchNumber = matchData.matchNumber;
-  const oldWinnerId = matchData.result?.winnerId;
+  const oldWinnerId = matchData.result?.verified ? matchData.result?.winnerId : null; // Only consider verified winners
 
-  // Get the league to check permissions
+  // Check if user is a player in this match
+  const isPlayer1 = matchData.player1Id === current.uid;
+  const isPlayer2 = matchData.player2Id === current.uid;
+  
+  if (!isPlayer1 && !isPlayer2) {
+    // Check if user is admin/owner (they can submit scores for any match)
+    const leagueRef = doc(db, 'leagues', leagueId);
+    const leagueSnap = await getDoc(leagueRef);
+    
+    if (!leagueSnap.exists()) {
+      throw new Error('League not found.');
+    }
+
+    const leagueData = leagueSnap.data();
+    const isOwner = leagueData.ownerId === current.uid;
+    const isAdmin = Array.isArray(leagueData.admins) && leagueData.admins.includes(current.uid);
+    
+    const userRef = doc(db, 'users', current.uid);
+    const userSnap = await getDoc(userRef);
+    const userData = userSnap.exists() ? userSnap.data() : null;
+    const isUserAdmin = userData?.role === 'admin';
+    
+    if (!isOwner && !isAdmin && !isUserAdmin) {
+      throw new Error('You can only submit scores for matches you are playing in.');
+    }
+  }
+
+  // Validate scores
+  if (player1Score < 0 || player2Score < 0 || !Number.isInteger(player1Score) || !Number.isInteger(player2Score)) {
+    throw new Error('Scores must be non-negative integers.');
+  }
+
+  // Determine winner
+  let winnerId: string | null = null;
+  if (player1Score > player2Score) {
+    winnerId = matchData.player1Id;
+  } else if (player2Score > player1Score) {
+    winnerId = matchData.player2Id;
+  }
+  // If scores are equal, winner is null (tie - may need tie-breaker logic later)
+
+  // Update the match with unverified scores
+  // Only cascade winner advancement if this is verified (handled in verifyMatchScore)
+  await updateDoc(matchRef, {
+    status: 'completed' as MatchStatus,
+    result: {
+      player1Score,
+      player2Score,
+      winnerId: winnerId || undefined,
+      verified: false, // Mark as unverified
+      submittedBy: current.uid,
+      verifiedBy: undefined,
+      verifiedAt: undefined,
+    },
+    completedAt: serverTimestamp(),
+    updatedAt: serverTimestamp(),
+  });
+}
+
+// Verify Match Score
+// This function allows admins to verify submitted scores.
+// Once verified, the winner is advanced through the bracket.
+export async function verifyMatchScore(matchId: string): Promise<void> {
+  const current = auth.currentUser;
+  if (!current) throw new Error('You must be signed in.');
+
+  // Get the match document
+  const matchRef = doc(db, 'tournamentMatches', matchId);
+  const matchSnap = await getDoc(matchRef);
+  
+  if (!matchSnap.exists()) {
+    throw new Error('Match not found.');
+  }
+
+  const matchData = matchSnap.data();
+  const leagueId = matchData.leagueId;
+  const currentRound = matchData.round;
+  const currentMatchNumber = matchData.matchNumber;
+  const oldWinnerId = matchData.result?.verified ? matchData.result?.winnerId : null;
+
+  // Check if match has scores to verify
+  if (!matchData.result || matchData.result.verified) {
+    throw new Error('Match has no unverified scores to verify.');
+  }
+
+  // Get the league to check admin permissions
   const leagueRef = doc(db, 'leagues', leagueId);
   const leagueSnap = await getDoc(leagueRef);
   
@@ -500,54 +541,38 @@ export async function updateMatchScore(
   const isUserAdmin = userData?.role === 'admin';
   
   if (!isOwner && !isAdmin && !isUserAdmin) {
-    throw new Error('Only league owners, admins, or system admins can update match scores.');
+    throw new Error('Only league owners, admins, or system admins can verify match scores.');
   }
 
-  // Validate scores
-  if (player1Score < 0 || player2Score < 0 || !Number.isInteger(player1Score) || !Number.isInteger(player2Score)) {
-    throw new Error('Scores must be non-negative integers.');
-  }
+  const newWinnerId = matchData.result.winnerId;
 
-  // Determine winner
-  let winnerId: string | null = null;
-  if (player1Score > player2Score) {
-    winnerId = matchData.player1Id;
-  } else if (player2Score > player1Score) {
-    winnerId = matchData.player2Id;
-  }
-  // If scores are equal, winner is null (tie - may need tie-breaker logic later)
-
-  // If there was a previous winner and it's different from the new winner, 
+  // If there was a previous verified winner and it's different from the new winner, 
   // we need to cascade the removal through ALL subsequent rounds
-  if (oldWinnerId && oldWinnerId !== winnerId) {
+  if (oldWinnerId && oldWinnerId !== newWinnerId) {
     await cascadeRemoveWinner(leagueId, currentRound, currentMatchNumber, oldWinnerId);
   }
 
-  // Update the match
+  // Mark the score as verified
   await updateDoc(matchRef, {
-    status: 'completed' as MatchStatus,
     result: {
-      player1Score,
-      player2Score,
-      winnerId: winnerId || undefined,
+      ...matchData.result,
+      verified: true,
+      verifiedBy: current.uid,
+      verifiedAt: serverTimestamp(),
     },
-    completedAt: serverTimestamp(),
     updatedAt: serverTimestamp(),
   });
 
   // Advance winner to next round if there is a winner, and cascade through all rounds
-  if (winnerId) {
-    await cascadeAdvanceWinner(leagueId, currentRound, currentMatchNumber, winnerId);
+  // Only do this for verified scores
+  if (newWinnerId) {
+    await cascadeAdvanceWinner(leagueId, currentRound, currentMatchNumber, newWinnerId);
   }
 }
 
 // Cascade Remove Winner Through All Rounds
 // This function removes a player from all subsequent rounds when a match score is changed.
 // It cascades through the entire bracket to ensure consistency.
-// @param leagueId - The league ID
-// @param currentRound - The round number of the match
-// @param currentMatchNumber - The match number in the current round
-// @param oldWinnerId - The user ID of the old winner to remove
 async function cascadeRemoveWinner(
   leagueId: string,
   currentRound: number,
@@ -603,7 +628,9 @@ async function cascadeRemoveWinner(
         
         // Also remove the winner of this match from further rounds
         // since the match participants changed, the result is invalid
-        const completedWinnerId = nextMatchData.result?.winnerId;
+        const completedWinnerId = nextMatchData.result?.verified 
+          ? nextMatchData.result?.winnerId 
+          : null;
         if (completedWinnerId) {
           await cascadeRemoveWinner(leagueId, round, matchNumber, completedWinnerId);
         }
@@ -625,10 +652,6 @@ async function cascadeRemoveWinner(
 // Cascade Advance Winner Through All Rounds
 // This function automatically advances the winner of a match through ALL subsequent rounds.
 // It cascades through the entire bracket, recalculating winners for all affected matches.
-// @param leagueId - The league ID
-// @param currentRound - The round number of the completed match
-// @param currentMatchNumber - The match number in the current round
-// @param winnerId - The user ID of the winner
 async function cascadeAdvanceWinner(
   leagueId: string,
   currentRound: number,
@@ -692,9 +715,11 @@ async function cascadeAdvanceWinner(
     const updatedNextMatchData = updatedNextMatchSnap.data();
     
     if (updatedNextMatchData.player1Id && updatedNextMatchData.player2Id) {
-      // Both players are set - check if match is completed
-      if (updatedNextMatchData.status === 'completed' && updatedNextMatchData.result?.winnerId) {
-        // Match already has a winner - advance that winner to the next round
+      // Both players are set - check if match is completed and verified
+      if (updatedNextMatchData.status === 'completed' && 
+          updatedNextMatchData.result?.winnerId && 
+          updatedNextMatchData.result?.verified) {
+        // Match already has a verified winner - advance that winner to the next round
         const nextWinnerId = updatedNextMatchData.result.winnerId;
         // Continue cascading with this winner
         isPlayer1 = matchNumber % 2 === 1;
@@ -714,10 +739,7 @@ async function cascadeAdvanceWinner(
 
 // Get User Progress in a League
 // This function gets a specific user's progress and position in a tournament/league.
-// It's optimized to only calculate stats for one user rather than all members.
-// @param leagueId - The unique ID of the league/tournament
-// @param userId - The unique ID of the user
-// @returns Object with user's position, wins, losses, win rate, and match count, or null if not found
+// It's optimised to only calculate stats for one user rather than all members.
 export async function getUserProgress(leagueId: string, userId: string): Promise<{
   position: number | null;
   wins: number;
@@ -771,7 +793,9 @@ export async function getUserProgress(leagueId: string, userId: string): Promise
     m => m.player1Id === userId || m.player2Id === userId
   );
   
+  // Upcoming matches are those that are pending or in progress
   const upcomingMatches = userMatches.filter(m => m.status === 'pending' || m.status === 'in_progress').length;
+  // Completed matches are those that are completed (verified or not)
   const completedMatches = userMatches.filter(m => m.status === 'completed').length;
   
   // Find position in standings
@@ -791,8 +815,6 @@ export async function getUserProgress(leagueId: string, userId: string): Promise
 // Add Dummy Tournament Data created ysing chatgpt https://chatgpt.com/share/691d9c29-51dc-8007-89a4-3ece7fb2cada
 // This function adds dummy tournament data to a league for testing purposes.
 // It creates 8 dummy members and a complete single-elimination bracket with results.
-// @param leagueId - The unique ID of the league to add dummy data to
-// @throws Error if user not signed in, not owner/admin, or league not found
 export async function addDummyTournamentData(leagueId: string): Promise<void> {
   const current = auth.currentUser;
   if (!current) throw new Error('You must be signed in.');
@@ -959,5 +981,237 @@ export async function addDummyTournamentData(leagueId: string): Promise<void> {
     },
     completedAt: serverTimestamp(),
     createdAt: serverTimestamp(),
+  });
+}
+
+// Get User Overall Stats
+// This function calculates a user's overall statistics across all tournaments they've participated in
+export async function getUserOverallStats(userId: string): Promise<{
+  totalWins: number;
+  totalLosses: number;
+  totalMatches: number;
+  overallWinRate: number;
+  tournamentsParticipated: number;
+  tournamentsWon: number;
+}> {
+  // Get all leagues the user is a member of
+  const membersQuery = query(
+    collection(db, 'leagueMembers'),
+    where('userId', '==', userId),
+    where('status', '==', 'active')
+  );
+  const membersSnap = await getDocs(membersQuery);
+  const leagueIds = membersSnap.docs.map(d => d.data().leagueId);
+
+  if (leagueIds.length === 0) {
+    return {
+      totalWins: 0,
+      totalLosses: 0,
+      totalMatches: 0,
+      overallWinRate: 0,
+      tournamentsParticipated: 0,
+      tournamentsWon: 0,
+    };
+  }
+
+  // Get all completed matches across all user's leagues
+  let totalWins = 0;
+  let totalLosses = 0;
+  const tournamentResults: { leagueId: string; won: boolean }[] = [];
+
+  for (const leagueId of leagueIds) {
+    const matchesQuery = query(
+      collection(db, 'tournamentMatches'),
+      where('leagueId', '==', leagueId),
+      where('status', '==', 'completed')
+    );
+    const matchesSnap = await getDocs(matchesQuery);
+    const matches = matchesSnap.docs.map(d => d.data() as any);
+
+    // Count wins and losses for this league
+    const wins = matches.filter(m => m.result?.winnerId === userId).length;
+    const losses = matches.filter(
+      m => (m.player1Id === userId || m.player2Id === userId) &&
+           m.result?.winnerId !== userId &&
+           m.result?.winnerId // Match must have a winner
+    ).length;
+
+    totalWins += wins;
+    totalLosses += losses;
+
+    // Check if user won the tournament (they're the winner of the final match)
+    const finalMatch = matches
+      .filter(m => m.round === 1 && m.matchNumber === 1)
+      .find(m => m.status === 'completed');
+    
+    if (finalMatch && finalMatch.result?.winnerId === userId) {
+      tournamentResults.push({ leagueId, won: true });
+    } else if (matches.length > 0) {
+      tournamentResults.push({ leagueId, won: false });
+    }
+  }
+
+  const totalMatches = totalWins + totalLosses;
+  const overallWinRate = totalMatches > 0 ? (totalWins / totalMatches) * 100 : 0;
+
+  return {
+    totalWins,
+    totalLosses,
+    totalMatches,
+    overallWinRate,
+    tournamentsParticipated: leagueIds.length,
+    tournamentsWon: tournamentResults.filter(r => r.won).length,
+  };
+}
+
+// Get User Tournament History
+// This function retrieves all tournaments a user has participated in with their results
+export async function getUserTournamentHistory(userId: string): Promise<Array<{
+  leagueId: string;
+  leagueName: string;
+  format: string;
+  position: number | null;
+  wins: number;
+  losses: number;
+  winRate: number;
+  totalMatches: number;
+  completedAt?: any;
+  joinedAt?: any;
+}>> {
+  // Get all leagues the user is a member of
+  const membersQuery = query(
+    collection(db, 'leagueMembers'),
+    where('userId', '==', userId),
+    where('status', '==', 'active')
+  );
+  const membersSnap = await getDocs(membersQuery);
+  const members = membersSnap.docs.map(d => ({
+    leagueId: d.data().leagueId,
+    joinedAt: d.data().joinedAt,
+  }));
+
+  const history: Array<{
+    leagueId: string;
+    leagueName: string;
+    format: string;
+    position: number | null;
+    wins: number;
+    losses: number;
+    winRate: number;
+    totalMatches: number;
+    completedAt?: any;
+    joinedAt?: any;
+  }> = [];
+
+  // For each league, get the user's stats
+  for (const member of members) {
+    try {
+      // Get league info
+      const leagueRef = doc(db, 'leagues', member.leagueId);
+      const leagueSnap = await getDoc(leagueRef);
+      
+      if (!leagueSnap.exists()) continue;
+
+      const leagueData = leagueSnap.data();
+      
+      // Include all tournament format leagues (single_elimination, double_elimination, round_robin, etc.)
+      // Check if it's any tournament format, not just 'tournament'
+      const isTournamentFormat = leagueData.tournamentFormat === 'tournament' ||
+        leagueData.tournamentFormat === 'single_elimination' ||
+        leagueData.tournamentFormat === 'double_elimination' ||
+        leagueData.tournamentFormat === 'round_robin';
+      
+      if (!isTournamentFormat) continue;
+
+      // Get user's progress in this tournament
+      const progress = await getUserProgress(member.leagueId, userId);
+      
+      if (!progress) continue;
+
+      // Check if tournament has final round matches with scores entered
+      // Round 1 is the final round (championship match)
+      const finalMatchesQuery = query(
+        collection(db, 'tournamentMatches'),
+        where('leagueId', '==', member.leagueId),
+        where('round', '==', 1)
+      );
+      const finalMatchesSnap = await getDocs(finalMatchesQuery);
+      const finalMatches = finalMatchesSnap.docs.map(d => d.data() as any);
+      
+      // Tournament is considered historical if:
+      // 1. There are final round matches AND at least one has scores entered, OR
+      // 2. The league has an endDate set (tournament was marked as completed)
+      const hasFinalRoundScores = finalMatches.length > 0 && 
+        finalMatches.some(m => m.status === 'completed' && m.result && 
+          (m.result.player1Score !== undefined || m.result.player2Score !== undefined));
+      
+      // Check if league has an endDate (tournament completion date)
+      const hasEndDate = leagueData.endDate && leagueData.endDate.trim() !== '';
+      
+      // Get completion time from:
+      // 1. Most recent completed final match with scores, OR
+      // 2. League endDate if set
+      let completedAt: any = undefined;
+      
+      if (hasFinalRoundScores) {
+        const completedFinalMatches = finalMatches.filter(
+          m => m.status === 'completed' && 
+          m.completedAt && 
+          m.result &&
+          (m.result.player1Score !== undefined || m.result.player2Score !== undefined)
+        );
+        
+        if (completedFinalMatches.length > 0) {
+          completedAt = completedFinalMatches.sort((a, b) => {
+            const aTime = a.completedAt?.toMillis?.() || 0;
+            const bTime = b.completedAt?.toMillis?.() || 0;
+            return bTime - aTime; // Most recent first
+          })[0]?.completedAt;
+        }
+      }
+      
+      // If no match completion date but endDate is set, use that
+      if (!completedAt && hasEndDate) {
+        try {
+          // Parse the endDate string (assuming format like "YYYY-MM-DD" or similar)
+          const endDateObj = new Date(leagueData.endDate);
+          if (!isNaN(endDateObj.getTime())) {
+            completedAt = { toMillis: () => endDateObj.getTime() };
+          }
+        } catch (e) {
+        }
+      }
+      
+      // Include tournaments where:
+      // 1. User has played matches (has progress), OR
+      // 2. Final round has scores entered, OR
+      // 3. Tournament has an endDate set (marked as completed)
+      if (!hasFinalRoundScores && !hasEndDate && progress.totalMatches === 0) {
+        // Skip tournaments with no matches, no final round scores, and no endDate
+        continue;
+      }
+
+      history.push({
+        leagueId: member.leagueId,
+        leagueName: leagueData.name || 'Unnamed Tournament',
+        format: leagueData.tournamentFormat || 'tournament',
+        position: progress.position,
+        wins: progress.wins,
+        losses: progress.losses,
+        winRate: progress.winRate,
+        totalMatches: progress.totalMatches,
+        completedAt: completedAt,
+        joinedAt: member.joinedAt,
+      });
+    } catch (error) {
+      continue;
+    }
+  }
+
+  // Sort by completion date (most recent first), then by joined date
+  return history.sort((a, b) => {
+    const aDate = a.completedAt?.toMillis?.() || a.joinedAt?.toMillis?.() || 0;
+    const bDate = b.completedAt?.toMillis?.() || b.joinedAt?.toMillis?.() || 0;
+    return bDate - aDate; // Most recent first
   });
 }

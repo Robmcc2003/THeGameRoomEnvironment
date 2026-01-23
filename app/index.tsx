@@ -1,6 +1,7 @@
 // Login and Signup Screen
-// This is the authentication screen where users can sign in or create a new account.
-// It includes username validation and user profile creation.
+// Main file to handle user authentication, sign up, and profile creation.
+/* Authentication code (lines 35-68) adapted from Firebase Auth documentation - https://firebase.google.com/docs/auth */
+/* User profile creation (lines 70-94) uses Firestore - https://firebase.google.com/docs/firestore */
 
 import { router } from 'expo-router'
 import { createUserWithEmailAndPassword, onAuthStateChanged, signInWithEmailAndPassword } from 'firebase/auth'
@@ -11,18 +12,15 @@ import { auth, db } from '../FirebaseConfig'
 import Logo from '../components/Logo'
 
 const index = () => {
-  // Component state
-  const [email, setEmail] = useState(''); // User's email address
-  const [password, setPassword] = useState(''); // User's password
-  const [username, setUsername] = useState(''); // User's chosen username (for signup)
-  const [userRole, setUserRole] = useState<'user' | 'admin'>('user'); // User's role (for signup)
-  const [isSignUp, setIsSignUp] = useState(false); // Toggle between sign in and sign up modes
-  const [loading, setLoading] = useState(true); // Loading state for checking auth status
-  const [signingIn, setSigningIn] = useState(false); // Loading state for sign in process
-  const [signingUp, setSigningUp] = useState(false); // Loading state for sign up process
+  const [email, setEmail] = useState('');
+  const [password, setPassword] = useState('');
+  const [username, setUsername] = useState('');
+  const [userRole, setUserRole] = useState<'user' | 'admin'>('user');
+  const [isSignUp, setIsSignUp] = useState(false);
+  const [loading, setLoading] = useState(true);
+  const [signingIn, setSigningIn] = useState(false);
+  const [signingUp, setSigningUp] = useState(false);
 
-  // Check if user is already signed in
-  // This effect listens for authentication state changes and redirects signed-in users to the main app.
   useEffect(() => {
     const unsubscribe = onAuthStateChanged(auth, (user) => {
       if (user) {
@@ -34,8 +32,6 @@ const index = () => {
     return () => unsubscribe();
   }, []);
 
-  // Handle user sign in
-  // This function authenticates the user with Firebase Auth and ensures their profile exists.
   const signIn = async () => {
     if (!email.trim() || !password.trim()) {
       alert('Please enter both email and password');
@@ -47,8 +43,6 @@ const index = () => {
       const userCredential = await signInWithEmailAndPassword(auth, email, password);
       
       if (userCredential.user) {
-        // Ensure user profile exists (for backward compatibility)
-        // I check if the user has a profile and create/update it if needed.
         const userRef = doc(db, 'users', userCredential.user.uid);
         const userSnap = await getDoc(userRef);
         
@@ -67,15 +61,12 @@ const index = () => {
         router.replace('/(tabs)');
       }
     } catch (error: any) {
-      console.log(error);
       alert('Sign in failed: ' + (error.message || 'Unknown error'));
     } finally {
       setSigningIn(false);
     }
   }
 
-  // Create user profile in Firestore
-  // This function creates or updates a user's profile document with their email, username, and role.
   const createUserProfile = async (userId: string, email: string, username: string, role: 'user' | 'admin' = 'user') => {
     const userRef = doc(db, 'users', userId);
     const userSnap = await getDoc(userRef);
@@ -85,7 +76,7 @@ const index = () => {
       emailLower: email.toLowerCase(),
       username: username.trim(),
       displayName: username.trim(),
-      role: role, // Store user role (user or admin)
+      role: role,
       createdAt: userSnap.exists() ? userSnap.data().createdAt : serverTimestamp(),
       updatedAt: serverTimestamp(),
     };
@@ -93,9 +84,6 @@ const index = () => {
     await setDoc(userRef, userData, { merge: true });
   };
 
-  // Check if username is available
-  // This function queries Firestore to see if a username is already taken.
-  // Returns true if available, false if taken.
   const checkUsernameAvailability = async (username: string): Promise<boolean> => {
     try {
       const { collection, query, where, getDocs } = await import('firebase/firestore');
@@ -106,18 +94,13 @@ const index = () => {
       const snapshot = await getDocs(usersQuery);
       return snapshot.empty;
     } catch (error: any) {
-      console.error('Error checking username:', error);
-      // If permission is denied, I allow signup to proceed (for backward compatibility)
       if (error?.code === 'permission-denied') {
-        console.warn('Permission denied checking username - allowing signup to proceed');
         return true;
       }
       throw new Error('Unable to verify username availability. Please try again.');
     }
   };
 
-  // Handle user sign up
-  // This function validates inputs, checks username availability, creates the Firebase Auth account, and creates the user profile.
   const signUp = async () => {
     if (!email.trim() || !password.trim()) {
       alert('Please enter both email and password');
@@ -131,7 +114,6 @@ const index = () => {
 
     const usernameTrimmed = username.trim();
     
-    // Validate username length
     if (usernameTrimmed.length < 3) {
       alert('Username must be at least 3 characters');
       return;
@@ -142,13 +124,11 @@ const index = () => {
       return;
     }
 
-    // Validate username format (only letters, numbers, and underscores)
     if (!/^[a-zA-Z0-9_]+$/.test(usernameTrimmed)) {
       alert('Username can only contain letters, numbers, and underscores');
       return;
     }
 
-    // Validate password length
     if (password.length < 6) {
       alert('Password must be at least 6 characters');
       return;
@@ -157,7 +137,6 @@ const index = () => {
     try {
       setSigningUp(true);
       
-      // Check if username is available before creating account
       try {
         const isAvailable = await checkUsernameAvailability(usernameTrimmed);
         if (!isAvailable) {
@@ -166,20 +145,16 @@ const index = () => {
           return;
         }
       } catch (checkError: any) {
-        console.warn('Username availability check failed:', checkError);
         alert(checkError.message || 'Could not verify username availability. You can change it later if needed.');
       }
 
-      // Create Firebase Auth account
       const userCredential = await createUserWithEmailAndPassword(auth, email, password);
       
       if (userCredential.user) {
-        // Create user profile in Firestore with selected role
         await createUserProfile(userCredential.user.uid, email, usernameTrimmed, userRole);
         router.replace('/(tabs)');
       }
     } catch (error: any) {
-      console.log(error);
       alert('Sign up failed: ' + (error.message || 'Unknown error'));
     } finally {
       setSigningUp(false);
@@ -225,7 +200,6 @@ const index = () => {
                 maxLength={20}
               />
               
-              {/* Role Selection */}
               <View style={styles.roleContainer}>
                 <Text style={styles.roleLabel}>Account Type:</Text>
                 <View style={styles.roleButtons}>

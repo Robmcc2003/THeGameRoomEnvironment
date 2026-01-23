@@ -1,7 +1,7 @@
-
-// This screen displays all available leagues that users can browse and join.
-// Users can view league details and join tournaments they're interested in.
-
+// Browse Leagues Screen
+// I display all available leagues that users can browse and join.
+/* League fetching code (lines 47-90) uses Firestore queries - https://firebase.google.com/docs/firestore/query-data/get-data */
+/* FlatList component from React Native - https://reactnative.dev/docs/flatlist */
 import { useRouter } from 'expo-router';
 import { getAuth } from 'firebase/auth';
 import { collection, getDocs, query, where } from 'firebase/firestore';
@@ -14,7 +14,6 @@ import { joinTournament } from '../../components/lib/tournaments';
 import { useColorScheme } from '../../components/useColorScheme';
 import Colors from '../../constants/Colors';
 
-// This defines the structure of a league object for this screen.
 type League = {
   id: string;
   name: string;
@@ -33,7 +32,6 @@ export default function TabTwoScreen() {
   const auth = getAuth();
   const user = auth.currentUser;
   
-  // Theme colors for light/dark mode
   const colorScheme = useColorScheme() ?? 'light';
   const palette = Colors[colorScheme];
   const tint = palette.tint;
@@ -41,15 +39,12 @@ export default function TabTwoScreen() {
   const borderColor = palette.border ?? (colorScheme === 'dark' ? '#2A2D2F' : '#E6E6E6');
   const textColor = palette.text ?? '#1F1F1F';
 
-  // Component state
-  const [leagues, setLeagues] = useState<League[]>([]); // List of all available leagues for the user
-  const [loading, setLoading] = useState(true); // Loading state for initial fetch i.e. when the tab is first opened
-  const [refreshing, setRefreshing] = useState(false); // Loading state for pull-to-refresh
-  const [joiningId, setJoiningId] = useState<string | null>(null); // ID of league user is currently joining
-  const [userMemberships, setUserMemberships] = useState<Set<string>>(new Set()); // Set of league IDs user has joined
+  const [leagues, setLeagues] = useState<League[]>([]);
+  const [loading, setLoading] = useState(true);
+  const [refreshing, setRefreshing] = useState(false);
+  const [joiningId, setJoiningId] = useState<string | null>(null);
+  const [userMemberships, setUserMemberships] = useState<Set<string>>(new Set());
 
-  // Fetch all leagues and check which ones the user has joined
-  // This function loads all leagues from Firestore and determines which ones the current user is a member of.
   const fetchLeagues = useCallback(async () => {
     if (!user) {
       setLoading(false);
@@ -59,7 +54,6 @@ export default function TabTwoScreen() {
     try {
       setLoading(true);
       
-      // Get all leagues from Firestore
       const leaguesQuery = query(collection(db, 'leagues'));
       const leaguesSnap = await getDocs(leaguesQuery);
       const allLeagues = leaguesSnap.docs.map(doc => ({
@@ -67,21 +61,17 @@ export default function TabTwoScreen() {
         ...doc.data(),
       })) as League[];
 
-      // Get all leagues the user has joined
-      // I query the leagueMembers collection to find which leagues this user is a member of.
       const membersQuery = query(
         collection(db, 'leagueMembers'),
         where('userId', '==', user.uid),
         where('status', '==', 'active')
       );
       const membersSnap = await getDocs(membersQuery);
-      // Create a Set of league IDs for quick membership lookup
       const membershipIds = new Set(membersSnap.docs.map(d => d.data().leagueId));
 
       setUserMemberships(membershipIds);
       setLeagues(allLeagues);
     } catch (error: any) {
-      console.error('Failed to fetch leagues:', error);
       Alert.alert('Error', 'Failed to load leagues.');
     } finally {
       setLoading(false);
@@ -89,14 +79,10 @@ export default function TabTwoScreen() {
     }
   }, [user]);
 
-  // Load leagues when component mounts
   useEffect(() => {
     fetchLeagues();
   }, [fetchLeagues]);
 
-  // Handle pull-to-refresh
-  // When user pulls down to refresh, I reload all leagues.
-  // this mimics a real app
   const onRefresh = () => {
     setRefreshing(true);
     fetchLeagues();
@@ -122,7 +108,6 @@ export default function TabTwoScreen() {
     }
   };
 
-  // This function navigates to the league detail screen when user taps "View".
   const handleViewLeague = (leagueId: string) => {
     router.push({
       pathname: '/league/[leagueId]',
@@ -130,11 +115,8 @@ export default function TabTwoScreen() {
     });
   };
 
-  // This function renders each league item in the list with its details and action buttons.
   const renderLeague = ({ item }: { item: League }) => {
-    // Check if user is already a member of this league
     const isMember = userMemberships.has(item.id);
-    // Check if user is currently in the process of joining this league
     const isJoining = joiningId === item.id;
 
     return (
@@ -280,7 +262,7 @@ export default function TabTwoScreen() {
   };
 
   // Show sign-in prompt if user is not authenticated
-  // If no user is signed in, I display a message asking them to sign in.
+  // If no user is signed in, It display a message asking them to sign in.
   if (!user) {
     return (
       <SafeAreaView style={styles.safeArea}>

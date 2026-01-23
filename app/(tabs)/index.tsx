@@ -1,10 +1,6 @@
-/**
- * Sign Out Tab Screen
- * References:
- * - Firebase Auth signOut: https://firebase.google.com/docs/reference/js/auth#signout
- * - Expo Router: https://docs.expo.dev/router/introduction/
- * - React Native Components: https://reactnative.dev/docs/components-and-apis
- */
+// Sign Out Tab Screen
+// I handle user sign out and navigation back to login.
+/* Sign out functionality (lines 31-61) from Firebase Auth - https://firebase.google.com/docs/reference/js/auth#signout */
 
 import { useRouter } from 'expo-router';
 import { signOut as firebaseSignOut } from 'firebase/auth';
@@ -13,23 +9,11 @@ import { auth } from '../../FirebaseConfig';
 import Logo from '../../components/Logo';
 import React from 'react';
 
-/**
- * This is the main component for the Account/Sign Out tab.
- */
 export default function TabOneScreen() {
-  // Get router for navigation
   const router = useRouter();
-  
-  // Track sign out state to prevent multiple calls
   const [isSigningOut, setIsSigningOut] = React.useState(false);
 
-  /**
-   * This function is called when the user taps the "Sign Out" button.
-   * It signs the user out of Firebase and navigates back to the login screen.
-   * Firebase signOut docs: https://firebase.google.com/docs/reference/js/auth#signout
-   */
   const handleSignOut = async () => {
-    // Prevent multiple simultaneous sign out attempts
     if (isSigningOut) {
       return;
     }
@@ -37,53 +21,32 @@ export default function TabOneScreen() {
     setIsSigningOut(true);
     
     try {
-      // Navigate to login screen BEFORE signing out
-      // This ensures we're outside tabs before auth state changes
-      // Once we navigate, the auth listener will keep us on login
-      console.log('Navigating to login before sign out');
       router.replace('/');
-      
-      // Small delay to ensure navigation completes
       await new Promise(resolve => setTimeout(resolve, 200));
-      
-      // Sign out from Firebase Authentication
-      // This clears the user's authentication session
       await firebaseSignOut(auth);
-      
-      console.log('Sign out successful');
-      
     } catch (error: any) {
-      console.error('Sign out error:', error);
       setIsSigningOut(false);
-      // Show error message to user
       alert('Sign out failed: ' + (error?.message || 'Unknown error'));
     }
   };
 
-  /**
-   * Main UI
-   * This renders the sign out screen with logo and sign out button.
-   */
   return (
     <ScrollView 
       contentContainerStyle={styles.scrollContent}
-      showsVerticalScrollIndicator={false} // Hide scrollbar
+      showsVerticalScrollIndicator={false}
     >
       <View style={styles.container}>
-        {/* Logo section at top */}
         <View style={styles.logoSection}>
           <Logo size="large" showTagline={true} />
         </View>
         
-        {/* Content section with sign out button */}
         <View style={styles.contentSection}>
           <Text style={styles.title}>Account</Text>
           <Text style={styles.subtitle}>Sign out to switch accounts</Text>
           
-          {/* Sign out button */}
           <TouchableOpacity 
             style={[styles.button, isSigningOut && styles.buttonDisabled]} 
-            onPress={handleSignOut} // Call handleSignOut when pressed
+            onPress={handleSignOut}
             disabled={isSigningOut}
           >
             <Text style={styles.text}>
@@ -96,70 +59,65 @@ export default function TabOneScreen() {
   );
 }
 
-/**
- * Styles for the Sign Out Screen
- * StyleSheet.create() creates optimized styles for React Native.
- * React Native StyleSheet docs: https://reactnative.dev/docs/stylesheet
- */
 const styles = StyleSheet.create({
   scrollContent: {
-    flexGrow: 1, // Allow content to grow and scroll
+    flexGrow: 1,
     paddingBottom: 40,
   },
   container: {
-    flex: 1, // Take up full screen
-    backgroundColor: '#FFFFFF', // White background
+    flex: 1,
+    backgroundColor: '#FFFFFF',
   },
   logoSection: {
     paddingTop: 40,
     paddingBottom: 20,
-    alignItems: 'center', // Center logo horizontally
-    borderBottomWidth: 2, // Black border at bottom
+    alignItems: 'center',
+    borderBottomWidth: 2,
     borderBottomColor: '#000000',
     marginBottom: 30,
     marginHorizontal: 20,
   },
   contentSection: {
-    paddingHorizontal: 20, // Padding on left and right
+    paddingHorizontal: 20,
     alignItems: 'center',
-    justifyContent: 'center', // Center content vertically
+    justifyContent: 'center',
     flex: 1,
   },
   title: {
     fontSize: 32,
-    fontWeight: '900', // Extra bold
+    fontWeight: '900',
     color: '#000000',
     marginBottom: 8,
-    letterSpacing: 0.5, // Space between letters
+    letterSpacing: 0.5,
   },
   subtitle: {
     fontSize: 16,
-    color: '#666666', // Gray color
+    color: '#666666',
     marginBottom: 40,
     fontWeight: '500',
     textAlign: 'center',
   },
   button: {
     width: '100%',
-    maxWidth: 400, // Don't make button too wide on large screens
-    backgroundColor: '#DC143C', // Red button (Crimson)
+    maxWidth: 400,
+    backgroundColor: '#DC143C',
     padding: 20,
-    borderRadius: 12, // Rounded corners
+    borderRadius: 12,
     alignItems: 'center',
     justifyContent: 'center',
-    shadowColor: '#DC143C', // Shadow color matches button
-    shadowOffset: { width: 0, height: 4 }, // Shadow offset
-    shadowOpacity: 0.3, // Shadow transparency
-    shadowRadius: 8, // Shadow blur
-    elevation: 5, // Android shadow
+    shadowColor: '#DC143C',
+    shadowOffset: { width: 0, height: 4 },
+    shadowOpacity: 0.3,
+    shadowRadius: 8,
+    elevation: 5,
     borderWidth: 2,
-    borderColor: '#000000', // Black border
+    borderColor: '#000000',
   },
   buttonDisabled: {
-    opacity: 0.7, // Dim button when disabled
+    opacity: 0.7,
   },
   text: {
-    color: '#FFFFFF', // White text
+    color: '#FFFFFF',
     fontSize: 18,
     fontWeight: '700',
     letterSpacing: 0.5,

@@ -1,3 +1,4 @@
+/* Member management functions use Firestore operations - https://firebase.google.com/docs/firestore */
 import { auth, db } from '../../FirebaseConfig';
 import { collection, query, where,
   getDocs, doc, getDoc, setDoc, serverTimestamp, deleteDoc,
@@ -14,7 +15,7 @@ type ResolvedUser = {
   email?: string | null;
 };
 
-// Look up a user by email address (case-insensitive)
+/* User lookup by email (lines 18-40) uses Firestore queries - https://firebase.google.com/docs/firestore/query-data/queries */
 export async function resolveUserByEmail(email: string): Promise<ResolvedUser | null> {
   const emailLower = (email ?? '').trim().toLowerCase();
   if (!emailLower) return null;
@@ -39,22 +40,8 @@ export async function resolveUserByEmail(email: string): Promise<ResolvedUser | 
   };
 }
 
-// Add Member to League by Email
-// This function adds a user to a league by their email address.
-// It works in two ways:
-// 1. If the user exists: Adds them directly as a member
-// 2. If the user doesn't exist: Creates a pending invite
-// This allows league owners to invite people who haven't signed up yet.
-// When those people sign up later, they can see their pending invites.
-// The function returns a result object that tells you what happened:
-// - { kind: 'added', memberId, user }: User was added as a member
-// - { kind: 'invited', inviteId, emailLower }: An invite was created
-// Reference:
-// - Adding data: https://firebase.google.com/docs/firestore/manage-data/add-data
-// - Promises: https://developer.mozilla.org/en-US/docs/Web/JavaScript/Reference/Global_Objects/Promise
-// @param opts - Options object containing leagueId, email, and optional role
-// @returns Promise that resolves to either 'added' or 'invited' result
-// @throws Error if user not signed in, missing league ID, or empty email
+/* Add member to league function (lines 58-133) uses Firestore setDoc - https://firebase.google.com/docs/firestore/manage-data/add-data */
+/* I adapted it to handle both existing users (add directly) and non-existent users (create invite) */
 export async function addMemberToLeague(opts: {
   leagueId: string;
   email: string;
@@ -132,11 +119,7 @@ export async function addMemberToLeague(opts: {
   return { kind: 'invited', inviteId, emailLower };
 }
 
-// This function gets all members (active, invited, pending) for a league.
-// It returns an array of member objects with all their information.
-// Reference: https://firebase.google.com/docs/firestore/query-data/get-data#get_multiple_documents_from_a_collection
-// @param leagueId - The unique ID of the league
-// @returns Array of member objects
+/* List members function (lines 140-153) uses Firestore queries - https://firebase.google.com/docs/firestore/query-data/get-data#get_multiple_documents_from_a_collection */
 export async function listMembers(leagueId: string) {
   // Query all members where leagueId matches
   const qs = await getDocs(query(
@@ -152,11 +135,7 @@ export async function listMembers(leagueId: string) {
   }));
 }
 
-// This function removes a user's membership from a league.
-// It deletes their membership document from the database.
-// Reference: https://firebase.google.com/docs/firestore/manage-data/delete-data
-// @param leagueId - The unique ID of the league
-// @param userId - The unique ID of the user to remove
+/* Remove member function (lines 160-165) uses Firestore deleteDoc - https://firebase.google.com/docs/firestore/manage-data/delete-data */
 export async function removeMember(leagueId: string, userId: string) {
   // Create the member ID (same format as when I added them)
   const memberId = `${leagueId}_${userId}`;
@@ -176,11 +155,7 @@ export type InviteRow = {
   resentAt?: any; // When invite was last resent
 };
 
-// List All Invites for a League
-// This function gets all pending/accepted/declined invites for a league.
-// Reference: https://firebase.google.com/docs/firestore/query-data/get-data#get_multiple_documents_from_a_collection
-// @param leagueId - The unique ID of the league
-// @returns Array of invite objects
+/* List invites function (lines 184-196) uses Firestore queries - https://firebase.google.com/docs/firestore/query-data/get-data#get_multiple_documents_from_a_collection */
 export async function listInvites(leagueId: string): Promise<InviteRow[]> {
   // Query all invites where leagueId matches
   const qs = await getDocs(query(
@@ -195,23 +170,14 @@ export async function listInvites(leagueId: string): Promise<InviteRow[]> {
   })) as InviteRow[];
 }
 
-// Cancel an Invite
-// This function deletes an invite, effectively canceling it.
-// Reference: https://firebase.google.com/docs/firestore/manage-data/delete-data
-// @param leagueId - The unique ID of the league
-// @param emailLower - The email address of the invite (lowercase)
+/* Cancel invite function (lines 203-208) uses Firestore deleteDoc - https://firebase.google.com/docs/firestore/manage-data/delete-data */
 export async function cancelInvite(leagueId: string, emailLower: string) {
   // Create the invite ID (same format as when I created it)
   const id = `${leagueId}_${emailLower.toLowerCase().trim()}`;
   // Delete the invite document
   await deleteDoc(doc(db, 'leagueInvites', id));
 }
-// This function updates an invite to mark it as resent.
-// It changes the status back to 'pending' and updates the resentAt timestamp.
-// This is useful if someone didn't receive the original invite or wants to send a reminder.
-// Reference: https://firebase.google.com/docs/firestore/manage-data/add-data#update-data
-// @param leagueId - The unique ID of the league
-// @param emailLower - The email address of the invite (lowercase)
+/* Resend invite function (lines 215-229) uses Firestore setDoc with merge - https://firebase.google.com/docs/firestore/manage-data/add-data#update-data */
 export async function resendInvite(leagueId: string, emailLower: string) {
   // Create the invite ID
   const id = `${leagueId}_${emailLower.toLowerCase().trim()}`;
@@ -228,13 +194,7 @@ export async function resendInvite(leagueId: string, emailLower: string) {
   );
 }
 
-// Set Member Role
-// This function changes a member's role (member or admin).
-// Only league owners/admins can call this function (enforced by security rules).
-// Reference: https://firebase.google.com/docs/firestore/manage-data/add-data#update-data
-// @param leagueId - The unique ID of the league
-// @param userId - The unique ID of the user
-// @param role - The new role ('member' or 'admin')
+/* Set member role function (lines 238-251) uses Firestore setDoc with merge - https://firebase.google.com/docs/firestore/manage-data/add-data#update-data */
 export async function setMemberRole(leagueId: string, userId: string, role: MemberRole) {
   // Create the member ID
   const id = `${leagueId}_${userId}`;

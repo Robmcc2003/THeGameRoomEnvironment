@@ -1,20 +1,7 @@
 // Tournament Bracket Screen
-// This screen displays tournament brackets and standings for a league.
-// It has two view modes:
-// 1. Standings: Shows a leaderboard with wins, losses, and win rates
-// 2. Bracket: Shows a visual tournament bracket tree (for bracket tournaments)
-// The bracket visualization shows:
-// - Matches in columns by round
-// - Connecting lines between matches
-// - Winner highlighting
-// - User match indicators
-// - Crown icon for final winner
-// References:
-// - React Native ScrollView: https://reactnative.dev/docs/scrollview
-// - React Native Dimensions: https://reactnative.dev/docs/dimensions
-// - Expo Router: https://docs.expo.dev/router/introduction/
-// - React useMemo: https://react.dev/reference/react/useMemo
-// - Chatgpt for styling https://chatgpt.com/share/691dab97-d050-8007-9ba3-69de17a2cc4c
+// I display tournament brackets and standings with two view modes: standings and bracket visualisation.
+/* Bracket visualisation styling (throughout bracket rendering) adapted from ChatGPT conversation - https://chatgpt.com/share/691dab97-d050-8007-9ba3-69de17a2cc4c */
+/* ScrollView and Dimensions (lines 9, throughout) from React Native docs - https://reactnative.dev/docs/scrollview */
 
 import { useLocalSearchParams, useRouter } from 'expo-router';
 import { Stack } from 'expo-router/stack';
@@ -26,16 +13,14 @@ import { useColorScheme } from '../../../components/useColorScheme';
 import Colors from '../../../constants/Colors';
 import { collection, doc, getDoc, getDocs, query, where } from 'firebase/firestore';
 import { auth, db } from '../../../FirebaseConfig';
-import { getTournamentBracket, getTournamentStandings, Match, autoGenerateBracketIfNeeded, updateMatchScore } from '../../../components/lib/tournaments';
+import { getTournamentBracket, getTournamentStandings, Match, autoGenerateBracketIfNeeded, updateMatchScore, verifyMatchScore } from '../../../components/lib/tournaments';
 
-// League Document Type
-// This defines the structure of a league document from Firestore.
 type LeagueDoc = {
-  name: string; // League name
-  game?: string | null; // Game being played (optional)
-  ownerId: string; // User ID of league creator
-  numberOfRounds?: number | null; // Number of rounds (optional)
-  tournamentFormat?: 'normal_league' | 'single_elimination' | 'double_elimination' | 'round_robin' | null; // Tournament type
+  name: string;
+  game?: string | null;
+  ownerId: string;
+  numberOfRounds?: number | null;
+  tournamentFormat?: 'normal_league' | 'single_elimination' | 'double_elimination' | 'round_robin' | null;
 };
 
 export default function TournamentBracketScreen() {
@@ -45,6 +30,7 @@ export default function TournamentBracketScreen() {
     (Array.isArray((params as any).leagueID) ? (params as any).leagueID[0] : ((params as any).leagueID as string | undefined));
 
   const router = useRouter();
+  // I get theme colours for light and dark mode
   const colorScheme = useColorScheme() ?? 'light';
   const palette = Colors[colorScheme];
   const tint = palette.tint;
@@ -68,20 +54,20 @@ export default function TournamentBracketScreen() {
 
   const uid = auth.currentUser?.uid ?? null;
 
-  // Get current user's position in standings
+  // I calculate the user's position in the standings
   const userPosition = useMemo(() => {
     if (!uid || standings.length === 0) return null;
     const index = standings.findIndex(s => s.userId === uid);
     return index >= 0 ? index + 1 : null;
   }, [uid, standings]);
 
-  // Get current user's stats
+  // I get the user's statistics from the standings
   const userStats = useMemo(() => {
     if (!uid || standings.length === 0) return null;
     return standings.find(s => s.userId === uid) || null;
   }, [uid, standings]);
 
-  // Get current user's matches
+  // I filter matches to show only the current user's matches
   const userMatches = useMemo(() => {
     if (!uid || !bracket) return [];
     return bracket.matches.filter(
@@ -89,6 +75,7 @@ export default function TournamentBracketScreen() {
     );
   }, [uid, bracket]);
 
+  // I load league data and check if the user has admin permissions
   const loadLeague = useCallback(async () => {
     if (!leagueId) { setLoading(false); return; }
     try {
@@ -102,12 +89,12 @@ export default function TournamentBracketScreen() {
       const leagueData = snap.data() as LeagueDoc;
       setLeague(leagueData);
       
-      // Check if user is admin or owner
+      // I check if the user is an owner, league admin, or system admin
       if (uid) {
         const isOwner = leagueData.ownerId === uid;
         const isLeagueAdmin = Array.isArray(leagueData.admins) && leagueData.admins.includes(uid);
         
-        // Check if user is system admin
+        // I check if the user is a system admin
         const userRef = doc(db, 'users', uid);
         const userSnap = await getDoc(userRef);
         const userData = userSnap.exists() ? userSnap.data() : null;
@@ -116,10 +103,10 @@ export default function TournamentBracketScreen() {
         setIsAdmin(isOwner || isLeagueAdmin || isSystemAdmin);
       }
     } catch (e) {
-      console.error('Failed to load league', e);
     }
   }, [leagueId, router, uid]);
 
+  // I load all active members and create a map for quick name lookups
   const loadMembers = useCallback(async () => {
     if (!leagueId) return;
     try {
@@ -139,17 +126,16 @@ export default function TournamentBracketScreen() {
       });
       setMemberMap(map);
     } catch (e) {
-      console.error('Failed to load members', e);
     }
   }, [leagueId]);
 
+  // I load the bracket and standings, auto-generating brackets if needed
   const loadBracket = useCallback(async () => {
     if (!leagueId) { setLoading(false); setRefreshing(false); return; }
     try {
       setLoading(true);
       
-      // Auto-generate brackets if needed (before loading)
-      // This ensures the bracket tab is always useful
+      // I auto-generate brackets if needed before loading to ensure the bracket tab is always useful
       await autoGenerateBracketIfNeeded(leagueId);
       
       const [bracketData, standingsData] = await Promise.all([
@@ -160,7 +146,6 @@ export default function TournamentBracketScreen() {
       setStandings(standingsData);
       await loadMembers();
     } catch (e) {
-      console.error('Failed to load bracket', e);
       Alert.alert('Error', 'Failed to load tournament bracket.');
     } finally {
       setLoading(false);
@@ -204,28 +189,40 @@ export default function TournamentBracketScreen() {
     try {
       setSavingScore(true);
       await updateMatchScore(selectedMatch.id, p1Score, p2Score);
-      Alert.alert('Success', 'Match score updated successfully.');
+      Alert.alert('Success', 'Match score submitted. Waiting for admin verification.');
       setScoreModalVisible(false);
       await loadBracket(); // Reload bracket to show updated scores
     } catch (error: any) {
-      Alert.alert('Error', error.message || 'Failed to update match score.');
+      Alert.alert('Error', error.message || 'Failed to submit match score.');
     } finally {
       setSavingScore(false);
     }
   };
 
+  // Handle verifying match score (admin only)
+  const handleVerifyScore = async (matchId: string) => {
+    try {
+      await verifyMatchScore(matchId);
+      Alert.alert('Success', 'Match score verified successfully.');
+      await loadBracket(); // Reload bracket to show verified scores
+    } catch (error: any) {
+      Alert.alert('Error', error.message || 'Failed to verify match score.');
+    }
+  };
+
+  // I get a player's display name or fall back to a shortened user ID
   const getPlayerName = (userId: string | null | undefined): string => {
     if (!userId) return 'TBD';
     const member = memberMap[userId];
     return member?.displayName || userId.substring(0, 8) + '...';
   };
 
-  // Check if this is a bracket tournament
+  // I check if this is a bracket-style tournament
   const isBracketTournament = useMemo(() => {
     return league?.tournamentFormat === 'single_elimination' || league?.tournamentFormat === 'double_elimination';
   }, [league?.tournamentFormat]);
 
-  // Organize matches by round for bracket display
+  // Organise matches by round for bracket display
   const matchesByRound = useMemo(() => {
     if (!bracket || !isBracketTournament) return {};
     const rounds: Record<number, Match[]> = {};
@@ -242,7 +239,7 @@ export default function TournamentBracketScreen() {
     return rounds;
   }, [bracket, isBracketTournament]);
 
-  // Render a bracket tree visualization
+  // I render the bracket tree visualisation with connecting lines between rounds
   const renderBracketTree = () => {
     if (!bracket || !isBracketTournament || Object.keys(matchesByRound).length === 0) {
       return (
@@ -297,9 +294,12 @@ export default function TournamentBracketScreen() {
                   {matches.map((match, matchIndex) => {
                     const isUserMatch = uid && (match.player1Id === uid || match.player2Id === uid);
                     const isCompleted = match.status === 'completed';
-                    const winnerId = match.result?.winnerId;
+                    const isVerified = match.result?.verified === true;
+                    const isUnverified = isCompleted && !isVerified;
+                    const winnerId = isVerified ? match.result?.winnerId : null;
                     const player1Name = getPlayerName(match.player1Id);
                     const player2Name = match.player2Id ? getPlayerName(match.player2Id) : 'TBD';
+                    const isUserInMatch = uid && (match.player1Id === uid || match.player2Id === uid);
 
                     return (
                       <RNView key={match.id} style={{ position: 'relative' }}>
@@ -307,7 +307,7 @@ export default function TournamentBracketScreen() {
                         <View
                           style={{
                             borderWidth: 2,
-                            borderColor: isUserMatch ? tint : (isCompleted && winnerId ? tint : borderColor),
+                            borderColor: isUserMatch ? tint : (isCompleted && isVerified && winnerId ? tint : borderColor),
                             backgroundColor: isUserMatch 
                               ? (colorScheme === 'dark' ? 'rgba(220,20,60,0.15)' : 'rgba(220,20,60,0.08)')
                               : cardBg,
@@ -329,15 +329,15 @@ export default function TournamentBracketScreen() {
                             marginBottom: 4,
                             paddingVertical: 4,
                             paddingHorizontal: 6,
-                            backgroundColor: winnerId === match.player1Id ? (colorScheme === 'dark' ? 'rgba(220,20,60,0.2)' : 'rgba(220,20,60,0.1)') : 'transparent',
+                            backgroundColor: (isVerified && winnerId === match.player1Id) ? (colorScheme === 'dark' ? 'rgba(220,20,60,0.2)' : 'rgba(220,20,60,0.1)') : 'transparent',
                             borderRadius: 4,
                           }}>
                             <Text 
                               numberOfLines={1}
                               style={{ 
                                 fontSize: 11,
-                                fontWeight: winnerId === match.player1Id ? '800' : (match.player1Id === uid ? '700' : '500'),
-                                color: match.player1Id === uid ? tint : (winnerId === match.player1Id ? tint : textColor),
+                                fontWeight: (isVerified && winnerId === match.player1Id) ? '800' : (match.player1Id === uid ? '700' : '500'),
+                                color: match.player1Id === uid ? tint : ((isVerified && winnerId === match.player1Id) ? tint : textColor),
                                 flex: 1,
                               }}
                             >
@@ -365,15 +365,15 @@ export default function TournamentBracketScreen() {
                             justifyContent: 'space-between',
                             paddingVertical: 4,
                             paddingHorizontal: 6,
-                            backgroundColor: winnerId === match.player2Id ? (colorScheme === 'dark' ? 'rgba(220,20,60,0.2)' : 'rgba(220,20,60,0.1)') : 'transparent',
+                            backgroundColor: (isVerified && winnerId === match.player2Id) ? (colorScheme === 'dark' ? 'rgba(220,20,60,0.2)' : 'rgba(220,20,60,0.1)') : 'transparent',
                             borderRadius: 4,
                           }}>
                             <Text 
                               numberOfLines={1}
                               style={{ 
                                 fontSize: 11,
-                                fontWeight: winnerId === match.player2Id ? '800' : (match.player2Id === uid ? '700' : '500'),
-                                color: match.player2Id === uid ? tint : (winnerId === match.player2Id ? tint : textColor),
+                                fontWeight: (isVerified && winnerId === match.player2Id) ? '800' : (match.player2Id === uid ? '700' : '500'),
+                                color: match.player2Id === uid ? tint : ((isVerified && winnerId === match.player2Id) ? tint : textColor),
                                 flex: 1,
                               }}
                             >
@@ -404,8 +404,8 @@ export default function TournamentBracketScreen() {
                               <Text style={{ fontSize: 10, fontWeight: '800', color: '#FFFFFF' }}>★</Text>
                             </RNView>
                           )}
-                          {/* Crown icon for final round winner */}
-                          {isFinalRound && isCompleted && winnerId && (
+                          {/* Crown icon for final round winner (only if verified) */}
+                          {isFinalRound && isCompleted && isVerified && winnerId && (
                             <RNView style={{ 
                               position: 'absolute', 
                               top: -8, 
@@ -423,8 +423,8 @@ export default function TournamentBracketScreen() {
                             </RNView>
                           )}
                           
-                          {/* Score Entry Button for Admins */}
-                          {isAdmin && (
+                          {/* Score Entry Button - All users can submit scores for their matches */}
+                          {(isUserInMatch || isAdmin) && (
                             <TouchableOpacity
                               onPress={() => openScoreModal(match)}
                               style={{
@@ -439,9 +439,42 @@ export default function TournamentBracketScreen() {
                               }}
                             >
                               <Text style={{ color: '#FFFFFF', fontWeight: '700', fontSize: 10 }}>
-                                {isCompleted ? 'Edit' : 'Enter Score'}
+                                {isCompleted ? 'Edit Score' : 'Enter Score'}
                               </Text>
                             </TouchableOpacity>
+                          )}
+                          
+                          {/* Verify Button for Admins - Only show if score is unverified */}
+                          {isAdmin && isUnverified && (
+                            <TouchableOpacity
+                              onPress={() => handleVerifyScore(match.id)}
+                              style={{
+                                marginTop: 6,
+                                paddingVertical: 4,
+                                paddingHorizontal: 8,
+                                borderRadius: 6,
+                                backgroundColor: '#28A745',
+                                borderWidth: 1,
+                                borderColor: '#000000',
+                                alignItems: 'center',
+                              }}
+                            >
+                              <Text style={{ color: '#FFFFFF', fontWeight: '700', fontSize: 10 }}>
+                                Verify Score
+                              </Text>
+                            </TouchableOpacity>
+                          )}
+                          
+                          {/* Verification Status Indicator */}
+                          {isCompleted && (
+                            <Text style={{ 
+                              fontSize: 9, 
+                              marginTop: 4,
+                              color: isVerified ? '#28A745' : '#FFC107',
+                              fontWeight: '600'
+                            }}>
+                              {isVerified ? '✓ Verified' : '⏳ Pending Verification'}
+                            </Text>
                           )}
                         </View>
 
@@ -521,9 +554,12 @@ export default function TournamentBracketScreen() {
     );
   };
 
+  // I render a single match in list view with score entry and verification options
   const renderMatch = (match: Match) => {
     const isCompleted = match.status === 'completed';
-    const hasResult = match.result && match.result.winnerId;
+    const isVerified = match.result?.verified === true;
+    const isUnverified = isCompleted && !isVerified;
+    const hasResult = match.result && match.result.winnerId && isVerified;
     const isUserMatch = uid && (match.player1Id === uid || match.player2Id === uid);
     const player1Name = getPlayerName(match.player1Id);
     const player2Name = match.player2Id ? getPlayerName(match.player2Id) : null;
@@ -558,7 +594,7 @@ export default function TournamentBracketScreen() {
         <RNView style={{ flexDirection: 'row', justifyContent: 'space-between', alignItems: 'center' }}>
           <RNView style={{ flex: 1 }}>
             <Text style={{ 
-              fontWeight: hasResult && match.result?.winnerId === match.player1Id ? '800' : (match.player1Id === uid ? '700' : '400'),
+              fontWeight: (hasResult && isVerified && match.result?.winnerId === match.player1Id) ? '800' : (match.player1Id === uid ? '700' : '400'),
               fontSize: 16,
               color: match.player1Id === uid ? tint : textColor,
             }}>
@@ -575,7 +611,7 @@ export default function TournamentBracketScreen() {
             {player2Name ? (
               <>
                 <Text style={{ 
-                  fontWeight: hasResult && match.result?.winnerId === match.player2Id ? '800' : (match.player2Id === uid ? '700' : '400'),
+                  fontWeight: (hasResult && isVerified && match.result?.winnerId === match.player2Id) ? '800' : (match.player2Id === uid ? '700' : '400'),
                   fontSize: 16,
                   color: match.player2Id === uid ? tint : textColor,
                 }}>
@@ -596,14 +632,14 @@ export default function TournamentBracketScreen() {
           <Text style={{ fontSize: 12, opacity: 0.6, fontWeight: '600' }}>
             Status: {match.status === 'completed' ? '✅ Completed' : match.status === 'in_progress' ? '🔄 In Progress' : '⏳ Pending'}
           </Text>
-          {hasResult && (
+          {hasResult && isVerified && (
             <Text style={{ fontSize: 12, fontWeight: '700', color: tint }}>
               Winner: {getPlayerName(match.result?.winnerId)}
             </Text>
           )}
         </RNView>
-        {/* Score Entry Button for Admins */}
-        {isAdmin && (
+        {/* Score Entry Button - All users can submit scores for their matches */}
+        {(isUserMatch || isAdmin) && (
           <TouchableOpacity
             onPress={() => openScoreModal(match)}
             style={{
@@ -622,10 +658,44 @@ export default function TournamentBracketScreen() {
             </Text>
           </TouchableOpacity>
         )}
+        
+        {/* Verify Button for Admins - Only show if score is unverified */}
+        {isAdmin && isUnverified && (
+          <TouchableOpacity
+            onPress={() => handleVerifyScore(match.id)}
+            style={{
+              marginTop: 8,
+              paddingVertical: 10,
+              paddingHorizontal: 16,
+              borderRadius: 8,
+              backgroundColor: '#28A745',
+              borderWidth: 2,
+              borderColor: '#000000',
+              alignItems: 'center',
+            }}
+          >
+            <Text style={{ color: '#FFFFFF', fontWeight: '700', fontSize: 14 }}>
+              Verify Score
+            </Text>
+          </TouchableOpacity>
+        )}
+        
+        {/* Verification Status Indicator */}
+        {isCompleted && (
+          <Text style={{ 
+            fontSize: 12, 
+            marginTop: 8,
+            color: isVerified ? '#28A745' : '#FFC107',
+            fontWeight: '700'
+          }}>
+            {isVerified ? '✓ Verified' : '⏳ Pending Verification'}
+          </Text>
+        )}
       </View>
     );
   };
 
+  // I render the leaderboard standings with player positions and statistics
   const renderStandings = () => {
     if (standings.length === 0) {
       return (
