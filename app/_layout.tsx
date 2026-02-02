@@ -16,6 +16,8 @@ import { useColorScheme } from '../components/useColorScheme';
 
 import { onAuthStateChanged } from 'firebase/auth';
 import { auth } from '../FirebaseConfig';
+import * as Notifications from 'expo-notifications';
+import { listenForLatestUnreadNotification, registerNotificationsForCurrentUser } from '../components/lib/notifications';
 
 // I export the error boundary to catch navigation errors.
 // Reference: https://react.dev/reference/react/Component#catching-rendering-errors-with-an-error-boundary
@@ -83,6 +85,36 @@ function RootLayoutNav() {
 
     return () => unsubscribe();
   }, [segments, router, pathname]);
+
+  // I register notification permissions and listen for new in-app notifications.
+  useEffect(() => {
+    if (!user?.uid) return;
+
+    let unsub: (() => void) | null = null;
+
+    (async () => {
+      await registerNotificationsForCurrentUser();
+
+      unsub = listenForLatestUnreadNotification({
+        userId: user.uid,
+        onNotification: async (n) => {
+          // I show a local alert while the app is running (Expo Go-friendly).
+          await Notifications.scheduleNotificationAsync({
+            content: {
+              title: n.title,
+              body: n.body,
+              data: { notificationId: n.id, ...(n.data ?? {}) },
+            },
+            trigger: null,
+          });
+        },
+      });
+    })();
+
+    return () => {
+      unsub?.();
+    };
+  }, [user?.uid]);
   
   const inTabs = segments[0] === '(tabs)';
   const shouldShowTabs = user || !inTabs;

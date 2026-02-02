@@ -9,9 +9,12 @@ import { ActivityIndicator, FlatList, RefreshControl, SafeAreaView, ScrollView, 
 import { auth } from '../../FirebaseConfig';
 import Logo from '../../components/Logo';
 import { Text } from '../../components/Themed';
-import { getUserOverallStats, getUserTournamentHistory } from '../../components/lib/tournaments';
+import { getUserOverallStats, getUserTournamentHistory, getUserGameSpecificStats } from '../../components/lib/tournaments';
 import { useColorScheme } from '../../components/useColorScheme';
 import Colors from '../../constants/Colors';
+import { getGameConfig } from '../../components/lib/gameTypes';
+import { PublicUserSummary, searchUsers } from '../../components/lib/users';
+import { AppBadge, AppButton, AppCard, AppInput, useAppTheme } from '../../components/ui';
 
 type UserStats = {
   totalWins: number;
@@ -37,6 +40,7 @@ type TournamentHistoryItem = {
 
 export default function TabThreeScreen() {
   const router = useRouter();
+  const t = useAppTheme();
   const colorScheme = useColorScheme();
   const tint = Colors[colorScheme ?? 'light'].tint;
   const textColor = colorScheme === 'dark' ? '#FFFFFF' : '#000000';
@@ -49,6 +53,43 @@ export default function TabThreeScreen() {
   const [stats, setStats] = useState<UserStats | null>(null);
   const [history, setHistory] = useState<TournamentHistoryItem[]>([]);
   const [userDisplayName, setUserDisplayName] = useState<string>('');
+  const [shooterStats, setShooterStats] = useState<Record<string, number>>({});
+  const [loadingShooterStats, setLoadingShooterStats] = useState(false);
+  const [friendQuery, setFriendQuery] = useState('');
+  const [friendLoading, setFriendLoading] = useState(false);
+  const [friendResults, setFriendResults] = useState<PublicUserSummary[]>([]);
+  const [friendError, setFriendError] = useState<string | null>(null);
+
+  useEffect(() => {
+    let cancelled = false;
+    const q = friendQuery.trim();
+
+    if (q.length < 2) {
+      setFriendResults([]);
+      setFriendError(null);
+      setFriendLoading(false);
+      return;
+    }
+
+    setFriendLoading(true);
+    setFriendError(null);
+
+    const timer = setTimeout(async () => {
+      try {
+        const res = await searchUsers(q, { limit: 12, excludeUserId: uid });
+        if (!cancelled) setFriendResults(res);
+      } catch (e: any) {
+        if (!cancelled) setFriendError(e?.message ?? 'Search failed.');
+      } finally {
+        if (!cancelled) setFriendLoading(false);
+      }
+    }, 250);
+
+    return () => {
+      cancelled = true;
+      clearTimeout(timer);
+    };
+  }, [friendQuery, uid]);
 
   useEffect(() => {
     const unsub = onAuthStateChanged(auth, (user) => {
@@ -75,6 +116,17 @@ export default function TabThreeScreen() {
       ]);
       setStats(statsData);
       setHistory(historyData);
+      
+      // Load shooter game stats (Call of Duty)
+      setLoadingShooterStats(true);
+      try {
+        const codStats = await getUserGameSpecificStats(uid, 'CALL_OF_DUTY');
+        setShooterStats(codStats);
+      } catch (error) {
+        setShooterStats({});
+      } finally {
+        setLoadingShooterStats(false);
+      }
     } catch (error) {
     } finally {
       setLoading(false);
@@ -151,7 +203,7 @@ export default function TabThreeScreen() {
 
   if (loading) {
     return (
-      <SafeAreaView style={[styles.container, { backgroundColor: cardBg }]}>
+      <SafeAreaView style={[styles.container, { backgroundColor: t.colors.background }]}>
         <View style={styles.loadingContainer}>
           <ActivityIndicator size="large" color={tint} />
           <Text style={[styles.loadingText, { color: textColor }]}>Loading profile...</Text>
@@ -161,7 +213,7 @@ export default function TabThreeScreen() {
   }
 
   return (
-    <SafeAreaView style={[styles.container, { backgroundColor: cardBg }]}>
+    <SafeAreaView style={[styles.container, { backgroundColor: t.colors.background }]}>
       <ScrollView
         style={styles.scrollView}
         refreshControl={
@@ -175,9 +227,81 @@ export default function TabThreeScreen() {
           <Text style={[styles.subtitle, { color: '#666' }]}>Your Tournament Profile</Text>
         </View>
 
+        {/* Find friends */}
+        <AppCard style={{ marginHorizontal: 20, marginBottom: 24 }}>
+          <Text style={[styles.sectionTitle, { color: textColor }]}>Find friends</Text>
+          <AppInput
+            label="Search by username or display name"
+            value={friendQuery}
+            onChangeText={setFriendQuery}
+            placeholder="e.g. rob, alex, charlie…"
+            autoCapitalize="none"
+          />
+
+          {friendLoading ? (
+            <View style={{ marginTop: 12, alignItems: 'center' }}>
+              <ActivityIndicator color={tint} />
+            </View>
+          ) : friendError ? (
+            <Text style={{ marginTop: 12, fontWeight: '700', color: '#FFC107' }}>{friendError}</Text>
+          ) : friendQuery.trim().length >= 2 && friendResults.length === 0 ? (
+            <Text style={{ marginTop: 12, color: t.colors.mutedText, fontWeight: '600' }}>
+              No users found.
+            </Text>
+          ) : null}
+
+          {friendResults.length > 0 ? (
+            <View style={{ marginTop: 12, gap: 10 }}>
+              {friendResults.map((u) => (
+                <TouchableOpacity
+                  key={u.id}
+                  onPress={() => router.push({ pathname: '/user/[userId]' as any, params: { userId: u.id } as any })}
+                  style={{
+                    paddingVertical: 12,
+                    paddingHorizontal: 14,
+                    borderRadius: 12,
+                    borderWidth: 2,
+                    borderColor: '#000000',
+                    backgroundColor: t.colors.card,
+                  }}
+                >
+                  <View style={{ flexDirection: 'row', alignItems: 'center', justifyContent: 'space-between', gap: 12 }}>
+                    <View style={{ flex: 1 }}>
+                      <Text style={{ fontWeight: '900', fontSize: 16, letterSpacing: 0.2 }}>
+                        {u.displayName || u.username || 'Player'}
+                      </Text>
+                      {u.username ? (
+                        <Text style={{ marginTop: 2, color: t.colors.mutedText, fontWeight: '700' }}>
+                          @{u.username}
+                        </Text>
+                      ) : null}
+                    </View>
+                    <AppBadge text="View" tone="tint" />
+                  </View>
+                </TouchableOpacity>
+              ))}
+            </View>
+          ) : null}
+        </AppCard>
+
+        {/* Notifications shortcut */}
+        <AppCard style={{ marginHorizontal: 20, marginBottom: 24 }}>
+          <Text style={[styles.sectionTitle, { color: textColor }]}>Notifications</Text>
+          <Text style={{ marginTop: 6, color: t.colors.mutedText, fontWeight: '600' }}>
+            View tournament updates sent by admins.
+          </Text>
+          <View style={{ marginTop: 14 }}>
+            <AppButton
+              title="Open inbox"
+              variant="secondary"
+              onPress={() => router.push('/notifications' as any)}
+            />
+          </View>
+        </AppCard>
+
         {/* Overall Stats */}
         {stats && (
-          <View style={[styles.statsSection, { backgroundColor: cardBg, borderColor }]}>
+          <AppCard style={{ marginHorizontal: 20, marginBottom: 24 }}>
             <Text style={[styles.sectionTitle, { color: textColor }]}>Overall Statistics</Text>
             
             <View style={styles.statsGrid}>
@@ -215,7 +339,49 @@ export default function TabThreeScreen() {
                 <Text style={[styles.statCardLabel, { color: '#666' }]}>Tournaments Won</Text>
               </View>
             </View>
-          </View>
+          </AppCard>
+        )}
+
+        {/* Shooter Game Stats (Call of Duty) */}
+        {Object.keys(shooterStats).length > 0 && (
+          <AppCard style={{ marginHorizontal: 20, marginBottom: 24 }}>
+            <View style={{ flexDirection: 'row', alignItems: 'center', marginBottom: 16 }}>
+              <Text style={[styles.sectionTitle, { color: textColor, flex: 1 }]}>Shooter game stats</Text>
+              <AppBadge text="CALL OF DUTY" tone="tint" />
+            </View>
+            
+            <View style={styles.statsGrid}>
+              {shooterStats.kills !== undefined && (
+                <View style={[styles.statCard, { backgroundColor: cardBg, borderColor }]}>
+                  <Text style={[styles.statCardValue, { color: tint }]}>{shooterStats.kills}</Text>
+                  <Text style={[styles.statCardLabel, { color: '#666' }]}>Total Kills</Text>
+                </View>
+              )}
+              
+              {shooterStats.deaths !== undefined && (
+                <View style={[styles.statCard, { backgroundColor: cardBg, borderColor }]}>
+                  <Text style={[styles.statCardValue, { color: tint }]}>{shooterStats.deaths}</Text>
+                  <Text style={[styles.statCardLabel, { color: '#666' }]}>Total Deaths</Text>
+                </View>
+              )}
+              
+              {shooterStats.kills !== undefined && shooterStats.deaths !== undefined && shooterStats.deaths > 0 && (
+                <View style={[styles.statCard, { backgroundColor: cardBg, borderColor }]}>
+                  <Text style={[styles.statCardValue, { color: tint }]}>
+                    {(shooterStats.kills / shooterStats.deaths).toFixed(2)}
+                  </Text>
+                  <Text style={[styles.statCardLabel, { color: '#666' }]}>K/D Ratio</Text>
+                </View>
+              )}
+              
+              {shooterStats.objectives !== undefined && (
+                <View style={[styles.statCard, { backgroundColor: cardBg, borderColor }]}>
+                  <Text style={[styles.statCardValue, { color: tint }]}>{shooterStats.objectives}</Text>
+                  <Text style={[styles.statCardLabel, { color: '#666' }]}>Objectives</Text>
+                </View>
+              )}
+            </View>
+          </AppCard>
         )}
 
         {/* Tournament History */}
@@ -282,6 +448,7 @@ const styles = StyleSheet.create({
   statsSection: {
     marginHorizontal: 20,
     marginBottom: 24,
+    marginTop: 0,
     padding: 20,
     borderRadius: 12,
     borderWidth: 2,

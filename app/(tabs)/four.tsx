@@ -9,20 +9,21 @@ import { Unsubscribe, addDoc, collection, doc, getDoc, onSnapshot as onDocSnapsh
   serverTimestamp, setDoc, where,
 } from 'firebase/firestore';
 import React, { useEffect, useRef, useState } from 'react';
-import { ActivityIndicator, Alert, FlatList, SafeAreaView, ScrollView, TextInput, TouchableOpacity,
+import { ActivityIndicator, Alert, FlatList, SafeAreaView, ScrollView, TextInput, TouchableOpacity, View as RNView,
 } from 'react-native';
 import { auth, db } from '../../FirebaseConfig';
 import Logo from '../../components/Logo';
 import { Text, View } from '../../components/Themed';
 import { styles } from '../../components/style.four';
 import { getUserProgress } from '../../components/lib/tournaments';
-import { useColorScheme } from '../../components/useColorScheme';
-import Colors from '../../constants/Colors';
+import { GameType, getAvailableGameTypes } from '../../components/lib/gameTypes';
+import { AppButton, AppCard, AppInput, useAppTheme } from '../../components/ui';
 
 type League = { 
   id: string;
   name: string;
   game?: string | null;
+  gameType?: GameType | null;
   tournamentFormat?: 'normal_league' | 'single_elimination' | 'double_elimination' | 'round_robin' | null;
 };
 
@@ -38,9 +39,11 @@ type LeagueProgress = {
 
 export default function TabFourScreen() {
   const router = useRouter();
+  const t = useAppTheme();
 
   const [leagueName, setLeagueName] = useState('');
   const [game, setGame] = useState('');
+  const [gameType, setGameType] = useState<GameType | ''>('');
   const [uid, setUid] = useState<string | null>(auth.currentUser?.uid ?? null);
   const [loadingLeagues, setLoadingLeagues] = useState(true);
   const [myLeagues, setMyLeagues] = useState<League[]>([]);
@@ -124,6 +127,7 @@ export default function TabFourScreen() {
               id: ld.id, 
               name: data.name, 
               game: data.game ?? null,
+              gameType: data.gameType ?? null,
               tournamentFormat: data.tournamentFormat ?? null,
             } as League;
 
@@ -202,6 +206,7 @@ export default function TabFourScreen() {
       const leagueRef = await addDoc(collection(db, 'leagues'), {
         name: leagueName.trim(),
         game: game.trim() || null,
+        gameType: gameType || null,
         ownerId: uid,
         createdAt: serverTimestamp(), 
         updatedAt: serverTimestamp(),
@@ -232,6 +237,7 @@ export default function TabFourScreen() {
       // Clear the form
       setLeagueName('');
       setGame('');
+      setGameType('');
 
       // Navigate to the new league's detail page
       router.push({
@@ -242,46 +248,83 @@ export default function TabFourScreen() {
       Alert.alert('Error', 'Failed to create league: ' + (error?.message || 'Unknown error'));
     }
   };
-//predominantly styling and UI structure below
-  const colorScheme = useColorScheme() ?? 'light';
-  const palette = Colors[colorScheme];
-  const tint = palette.tint;
-  const cardBg = palette.card ?? (colorScheme === 'dark' ? '#16181A' : '#FFFFFF');
-  const borderColor = palette.border ?? (colorScheme === 'dark' ? '#2A2D2F' : '#E6E6E6');
-  const textColor = palette.text ?? '#1F1F1F';
+  const tint = t.colors.tint;
+  const cardBg = t.colors.card;
+  const borderColor = t.colors.borderSubtle;
+  const textColor = t.colors.text;
 
   return (
-    <SafeAreaView style={styles.safeArea}>
-      <ScrollView style={styles.container}>
+    <SafeAreaView style={[styles.safeArea, { backgroundColor: t.colors.background }]}>
+      <ScrollView style={[styles.container, { backgroundColor: t.colors.background }]}>
         <View style={styles.logoSection}>
           <Logo size="small" showTagline={false} />
         </View>
 
         <Text style={styles.mainTitle}>My Leagues</Text>
 
-        <View style={styles.inputContainer}>
-          <TextInput
-            style={styles.input}
-            placeholder="League Name"
-            placeholderTextColor="#999999"
-            value={leagueName}
-            onChangeText={setLeagueName}
-          />
-        </View>
+        <AppCard style={{ marginBottom: t.spacing.lg }}>
+          <Text style={{ fontSize: 20, fontWeight: '900', letterSpacing: 0.3 }}>
+            Create a league
+          </Text>
+          <Text style={{ marginTop: 6, color: t.colors.mutedText, fontWeight: '600' }}>
+            Keep it simple — you can edit tournament settings later.
+          </Text>
 
-        <View style={styles.inputContainer}>
-          <TextInput
-            style={styles.input}
-            placeholder="Game (Optional)"
-            placeholderTextColor="#999999"
-            value={game}
-            onChangeText={setGame}
-          />
-        </View>
+          <RNView style={{ marginTop: t.spacing.lg, gap: t.spacing.md }}>
+            <AppInput
+              label="League name"
+              value={leagueName}
+              onChangeText={setLeagueName}
+              placeholder="League name"
+              autoCapitalize="words"
+            />
+            <AppInput
+              label="Game name (optional)"
+              value={game}
+              onChangeText={setGame}
+              placeholder="FIFA, NBA 2K, Madden…"
+              autoCapitalize="words"
+            />
 
-        <TouchableOpacity style={styles.button} onPress={handleCreateLeague}>
-          <Text style={styles.buttonText}>Create League</Text>
-        </TouchableOpacity>
+            <RNView>
+              <Text style={{ fontSize: 14, fontWeight: '800', marginBottom: 10, color: textColor, letterSpacing: 0.2 }}>
+                Game type
+              </Text>
+              <ScrollView horizontal showsHorizontalScrollIndicator={false}>
+                <RNView style={{ flexDirection: 'row', gap: 10, paddingBottom: 2 }}>
+                  {getAvailableGameTypes().map((config) => {
+                    const selected = gameType === config.id;
+                    return (
+                      <TouchableOpacity
+                        key={config.id}
+                        onPress={() => setGameType(selected ? '' : config.id)}
+                        style={{
+                          paddingHorizontal: 14,
+                          paddingVertical: 10,
+                          borderRadius: 999,
+                          borderWidth: 2,
+                          borderColor: selected ? tint : t.colors.borderStrong,
+                          backgroundColor: selected ? tint : t.colors.card,
+                        }}
+                      >
+                        <Text style={{ fontWeight: '800', color: selected ? '#FFFFFF' : textColor }}>
+                          {config.name}
+                        </Text>
+                      </TouchableOpacity>
+                    );
+                  })}
+                </RNView>
+              </ScrollView>
+              {gameType ? (
+                <Text style={{ fontSize: 12, marginTop: 10, color: t.colors.mutedText, fontWeight: '600' }}>
+                  {getAvailableGameTypes().find(g => g.id === gameType)?.description}
+                </Text>
+              ) : null}
+            </RNView>
+
+            <AppButton title="Create league" onPress={handleCreateLeague} />
+          </RNView>
+        </AppCard>
 
         <Text style={styles.sectionTitle}>My Leagues & Progress</Text>
 

@@ -26,6 +26,7 @@ import Colors from '../../constants/Colors';
 import { auth, db } from '../../FirebaseConfig';
 import { doc, getDoc, updateDoc, serverTimestamp } from 'firebase/firestore';
 import { autoGenerateBracketIfNeeded } from '../../components/lib/tournaments';
+import { GameType, getAvailableGameTypes } from '../../components/lib/gameTypes';
 
 export default function EditLeagueScreen() {
   const { leagueId } = useLocalSearchParams<{ leagueId: string }>();
@@ -45,6 +46,7 @@ export default function EditLeagueScreen() {
   const [saving, setSaving] = useState(false);
   const [name, setName] = useState('');
   const [game, setGame] = useState('');
+  const [gameType, setGameType] = useState<GameType | ''>('');
   const [rules, setRules] = useState('');
   const [numberOfRounds, setNumberOfRounds] = useState('');
   const [maxParticipants, setMaxParticipants] = useState('');
@@ -81,6 +83,7 @@ export default function EditLeagueScreen() {
         // I populate all form fields with existing league data
         setName(data.name ?? '');
         setGame(data.game ?? '');
+        setGameType(data.gameType ?? '');
         setRules(data.rules ?? '');
         setNumberOfRounds(data.numberOfRounds?.toString() ?? '');
         setMaxParticipants(data.maxParticipants?.toString() ?? '');
@@ -135,6 +138,7 @@ export default function EditLeagueScreen() {
       await updateDoc(ref, {
         name: name.trim(),
         game: game.trim() || null,
+        gameType: gameType || null,
         rules: rules.trim() || null,
         numberOfRounds: roundsNum || null,
         maxParticipants: maxPartsNum || null,
@@ -226,7 +230,7 @@ export default function EditLeagueScreen() {
             />
 
             <Text style={{ marginTop: 8, fontWeight: '800', fontSize: 18, color: textColor, letterSpacing: 0.3 }}>
-              Game
+              Game Name
             </Text>
             <TextInput
               style={{
@@ -245,6 +249,42 @@ export default function EditLeagueScreen() {
               placeholder="FIFA, NBA 2K, Madden…"
               placeholderTextColor="#9AA0A6"
             />
+            <Text style={{ marginTop: 16, fontWeight: '800', fontSize: 18, color: textColor, letterSpacing: 0.3 }}>
+              Game Type
+            </Text>
+            <RNView style={{ flexDirection: 'row', flexWrap: 'wrap', gap: 8, marginTop: 8 }}>
+              {getAvailableGameTypes().map((config) => (
+                <TouchableOpacity
+                  key={config.id}
+                  onPress={() => setGameType(gameType === config.id ? '' : config.id)}
+                  style={{
+                    paddingHorizontal: 16,
+                    paddingVertical: 10,
+                    borderRadius: 10,
+                    borderWidth: 2,
+                    borderColor: gameType === config.id ? tint : borderColor,
+                    backgroundColor: gameType === config.id ? tint : 'transparent',
+                    shadowColor: gameType === config.id ? tint : 'transparent',
+                    shadowOffset: { width: 0, height: 2 },
+                    shadowOpacity: gameType === config.id ? 0.3 : 0,
+                    shadowRadius: 4,
+                    elevation: gameType === config.id ? 3 : 0,
+                  }}
+                >
+                  <Text style={{
+                    fontWeight: '600',
+                    color: gameType === config.id ? '#FFFFFF' : textColor,
+                  }}>
+                    {config.name}
+                  </Text>
+                </TouchableOpacity>
+              ))}
+            </RNView>
+            {gameType && (
+              <Text style={{ fontSize: 12, opacity: 0.7, marginTop: 8, color: textColor }}>
+                {getAvailableGameTypes().find(g => g.id === gameType)?.description}
+              </Text>
+            )}
 
             <Text style={{ marginTop: 8, fontWeight: '800', fontSize: 18, color: textColor, letterSpacing: 0.3 }}>
               Rules & Guidelines

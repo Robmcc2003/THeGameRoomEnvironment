@@ -1,4 +1,4 @@
-// Tab Navigation Layout
+// Tab Navigation Layout It 3
 // Defines the bottom tab bar with 4 tabs: Sign Out, Home, My Badges, My Leagues
 
 import FontAwesome from '@expo/vector-icons/FontAwesome';

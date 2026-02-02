@@ -1,11 +1,14 @@
 import { auth, db } from '../../FirebaseConfig';
-import { collection, query, where, getDocs, doc, getDoc, setDoc, serverTimestamp, updateDoc } from 'firebase/firestore';
+import { collection, query, where, getDocs, doc, getDoc, setDoc, serverTimestamp, updateDoc, deleteDoc } from 'firebase/firestore';
+import { getGameConfig } from './gameTypes';
 
 export type MatchStatus = 'pending' | 'in_progress' | 'completed';
 
 export type MatchResult = {
-  player1Score?: number;
-  player2Score?: number;
+  player1Score?: number; // Legacy field for backwards compatibility
+  player2Score?: number; // Legacy field for backwards compatibility
+  player1Scores?: Record<string, any>; // Game-specific scores for player 1
+  player2Scores?: Record<string, any>; // Game-specific scores for player 2
   winnerId?: string;
   verified?: boolean; // Whether the score has been verified by an admin
   submittedBy?: string; // User ID who submitted the score
@@ -274,6 +277,50 @@ async function generateBracketMatchesInternal(
   }
 }
 
+// Check if matches exist for a league
+export async function hasExistingMatches(leagueId: string): Promise<boolean> {
+  const existingMatchesQuery = query(
+    collection(db, 'tournamentMatches'),
+    where('leagueId', '==', leagueId)
+  );
+  const existingMatchesSnap = await getDocs(existingMatchesQuery);
+  return existingMatchesSnap.size > 0;
+}
+
+// Delete all matches for a league (for regenerating brackets)
+export async function deleteAllMatches(leagueId: string): Promise<void> {
+  const current = auth.currentUser;
+  if (!current) throw new Error('You must be signed in.');
+
+  // Get the league document to check permissions
+  const leagueRef = doc(db, 'leagues', leagueId);
+  const leagueSnap = await getDoc(leagueRef);
+  
+  if (!leagueSnap.exists()) {
+    throw new Error('League not found.');
+  }
+
+  const leagueData = leagueSnap.data();
+  
+  // Check if the user is the owner or an admin
+  const isOwner = leagueData.ownerId === current.uid;
+  const isAdmin = Array.isArray(leagueData.admins) && leagueData.admins.includes(current.uid);
+  if (!isOwner && !isAdmin) {
+    throw new Error('Only league owners and admins can delete matches.');
+  }
+
+  // Get all matches for this league
+  const matchesQuery = query(
+    collection(db, 'tournamentMatches'),
+    where('leagueId', '==', leagueId)
+  );
+  const matchesSnap = await getDocs(matchesQuery);
+  
+  // Delete all matches
+  const deletePromises = matchesSnap.docs.map(matchDoc => deleteDoc(matchDoc.ref));
+  await Promise.all(deletePromises);
+}
+
 /* Bracket generation algorithm (lines 180-274) is based on single-elimination tournament theory - */
 /* I adapted the algorithm to handle byes and create placeholder matches for subsequent rounds */
 export async function generateBracketMatches(leagueId: string): Promise<void> {
@@ -413,10 +460,12 @@ export async function getTournamentStandings(leagueId: string) {
 // Update Match Score
 // This function allows any user to submit scores for matches they're in.
 // Scores are marked as unverified until an admin verifies them.
+// I support both legacy numeric scores and game-specific score objects.
 export async function updateMatchScore(
   matchId: string,
-  player1Score: number,
-  player2Score: number
+  player1Score: number | Record<string, any>,
+  player2Score: number | Record<string, any>,
+  gameType?: string | null
 ): Promise<void> {
   const current = auth.currentUser;
   if (!current) throw new Error('You must be signed in.');
@@ -462,33 +511,115 @@ export async function updateMatchScore(
     }
   }
 
+  // Get league data to determine game type
+  const leagueRef = doc(db, 'leagues', leagueId);
+  const leagueSnap = await getDoc(leagueRef);
+  if (!leagueSnap.exists()) {
+    throw new Error('League not found.');
+  }
+  const leagueData = leagueSnap.data();
+  const leagueGameType = gameType || leagueData.gameType;
+
+  // I determine if scores are numeric (legacy) or objects (game-specific)
+  const isNumericScore = typeof player1Score === 'number' && typeof player2Score === 'number';
+  const isGameSpecificScore = typeof player1Score === 'object' && typeof player2Score === 'object';
+
   // Validate scores
-  if (player1Score < 0 || player2Score < 0 || !Number.isInteger(player1Score) || !Number.isInteger(player2Score)) {
-    throw new Error('Scores must be non-negative integers.');
+  if (isNumericScore) {
+    if (player1Score < 0 || player2Score < 0 || !Number.isInteger(player1Score) || !Number.isInteger(player2Score)) {
+      throw new Error('Scores must be non-negative integers.');
+    }
+  } else if (isGameSpecificScore) {
+    // Validate game-specific scores
+    const gameConfig = getGameConfig(leagueGameType);
+    for (const field of gameConfig.scoringFields.filter(f => f.required)) {
+      if (player1Score[field.id] === undefined || player2Score[field.id] === undefined) {
+        throw new Error(`Required field ${field.label} is missing.`);
+      }
+      if (typeof player1Score[field.id] === 'number' && player1Score[field.id] < 0) {
+        throw new Error(`${field.label} must be non-negative.`);
+      }
+      if (typeof player2Score[field.id] === 'number' && player2Score[field.id] < 0) {
+        throw new Error(`${field.label} must be non-negative.`);
+      }
+    }
+  } else {
+    throw new Error('Invalid score format.');
   }
 
-  // Determine winner
+  // Determine winner using game-specific logic or simple comparison
   let winnerId: string | null = null;
-  if (player1Score > player2Score) {
-    winnerId = matchData.player1Id;
-  } else if (player2Score > player1Score) {
-    winnerId = matchData.player2Id;
+  if (isGameSpecificScore && leagueGameType) {
+    const gameConfig = getGameConfig(leagueGameType);
+    const winner = gameConfig.determineWinner({
+      player1: player1Score as Record<string, any>,
+      player2: player2Score as Record<string, any>,
+    });
+    if (winner === 'player1') {
+      winnerId = matchData.player1Id;
+    } else if (winner === 'player2') {
+      winnerId = matchData.player2Id;
+    }
+  } else if (isNumericScore) {
+    // Legacy numeric comparison
+    if (player1Score > player2Score) {
+      winnerId = matchData.player1Id;
+    } else if (player2Score > player1Score) {
+      winnerId = matchData.player2Id;
+    }
   }
-  // If scores are equal, winner is null (tie - may need tie-breaker logic later)
 
   // Update the match with unverified scores
   // Only cascade winner advancement if this is verified (handled in verifyMatchScore)
+  // I don't include undefined values as Firestore doesn't support them
+  const resultData: any = {
+    verified: false, // Mark as unverified
+    submittedBy: current.uid,
+  };
+
+  if (isNumericScore) {
+    // Legacy format
+    resultData.player1Score = player1Score;
+    resultData.player2Score = player2Score;
+  } else if (isGameSpecificScore) {
+    // Game-specific format - I filter out undefined/null values and empty optional fields
+    const cleanP1Scores: Record<string, any> = {};
+    const cleanP2Scores: Record<string, any> = {};
+    
+    // I only include fields that have values (required fields always have values)
+    Object.keys(player1Score as Record<string, any>).forEach(key => {
+      const value = (player1Score as Record<string, any>)[key];
+      if (value !== undefined && value !== null && value !== '') {
+        cleanP1Scores[key] = value;
+      }
+    });
+    
+    Object.keys(player2Score as Record<string, any>).forEach(key => {
+      const value = (player2Score as Record<string, any>)[key];
+      if (value !== undefined && value !== null && value !== '') {
+        cleanP2Scores[key] = value;
+      }
+    });
+    
+    resultData.player1Scores = cleanP1Scores;
+    resultData.player2Scores = cleanP2Scores;
+    
+    // Also store primary score for backwards compatibility
+    const gameConfig = getGameConfig(leagueGameType);
+    const primaryField = gameConfig.scoringFields.find(f => f.required) || gameConfig.scoringFields[0];
+    if (primaryField) {
+      resultData.player1Score = cleanP1Scores[primaryField.id] ?? 0;
+      resultData.player2Score = cleanP2Scores[primaryField.id] ?? 0;
+    }
+  }
+
+  if (winnerId) {
+    resultData.winnerId = winnerId;
+  }
+
   await updateDoc(matchRef, {
     status: 'completed' as MatchStatus,
-    result: {
-      player1Score,
-      player2Score,
-      winnerId: winnerId || undefined,
-      verified: false, // Mark as unverified
-      submittedBy: current.uid,
-      verifiedBy: undefined,
-      verifiedAt: undefined,
-    },
+    result: resultData,
     completedAt: serverTimestamp(),
     updatedAt: serverTimestamp(),
   });
@@ -712,6 +843,9 @@ async function cascadeAdvanceWinner(
     
     // Check if both players are now set in this match
     const updatedNextMatchSnap = await getDoc(nextMatchRef);
+    if (!updatedNextMatchSnap.exists()) {
+      break;
+    }
     const updatedNextMatchData = updatedNextMatchSnap.data();
     
     if (updatedNextMatchData.player1Id && updatedNextMatchData.player2Id) {
@@ -1214,4 +1348,79 @@ export async function getUserTournamentHistory(userId: string): Promise<Array<{
     const bDate = b.completedAt?.toMillis?.() || b.joinedAt?.toMillis?.() || 0;
     return bDate - aDate; // Most recent first
   });
+}
+
+// Get User Game-Specific Stats
+// This function calculates game-specific statistics for shooter games (kills, deaths, objectives, etc.)
+export async function getUserGameSpecificStats(userId: string, gameType: string): Promise<Record<string, number>> {
+  // Get all leagues the user is a member of with the specified game type
+  const membersQuery = query(
+    collection(db, 'leagueMembers'),
+    where('userId', '==', userId),
+    where('status', '==', 'active')
+  );
+  const membersSnap = await getDocs(membersQuery);
+  const leagueIds = membersSnap.docs.map(d => d.data().leagueId);
+
+  if (leagueIds.length === 0) {
+    return {};
+  }
+
+  // Get all leagues with the specified game type
+  const leaguesWithGameType: string[] = [];
+  for (const leagueId of leagueIds) {
+    const leagueRef = doc(db, 'leagues', leagueId);
+    const leagueSnap = await getDoc(leagueRef);
+    if (leagueSnap.exists()) {
+      const leagueData = leagueSnap.data();
+      const leagueGameType = leagueData.gameType;
+      if (leagueGameType && leagueGameType.toUpperCase().replace(/\s+/g, '_') === gameType.toUpperCase().replace(/\s+/g, '_')) {
+        leaguesWithGameType.push(leagueId);
+      }
+    }
+  }
+
+  if (leaguesWithGameType.length === 0) {
+    return {};
+  }
+
+  // Aggregate stats from all matches in these leagues
+  const stats: Record<string, number> = {};
+
+  for (const leagueId of leaguesWithGameType) {
+    const matchesQuery = query(
+      collection(db, 'tournamentMatches'),
+      where('leagueId', '==', leagueId),
+      where('status', '==', 'completed')
+    );
+    const matchesSnap = await getDocs(matchesQuery);
+    const matches = matchesSnap.docs.map(d => d.data() as any);
+
+    for (const match of matches) {
+      if (!match.result) continue;
+
+      const isPlayer1 = match.player1Id === userId;
+      const isPlayer2 = match.player2Id === userId;
+
+      if (isPlayer1 && match.result.player1Scores) {
+        // Aggregate player 1 game-specific scores
+        Object.keys(match.result.player1Scores).forEach(key => {
+          const value = match.result.player1Scores[key];
+          if (typeof value === 'number') {
+            stats[key] = (stats[key] || 0) + value;
+          }
+        });
+      } else if (isPlayer2 && match.result.player2Scores) {
+        // Aggregate player 2 game-specific scores
+        Object.keys(match.result.player2Scores).forEach(key => {
+          const value = match.result.player2Scores[key];
+          if (typeof value === 'number') {
+            stats[key] = (stats[key] || 0) + value;
+          }
+        });
+      }
+    }
+  }
+
+  return stats;
 }

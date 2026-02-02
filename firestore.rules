@@ -1,0 +1,171 @@
+rules_version = '2';
+
+service cloud.firestore {
+  match /databases/{database}/documents {
+    function isAuthenticated() {
+      return request.auth != null;
+    }
+
+    function currentUserId() {
+      return request.auth.uid;
+    }
+
+    function leagueDoc(leagueId) {
+      return get(/databases/$(database)/documents/leagues/$(leagueId));
+    }
+
+    function leagueExists(leagueId) {
+      return exists(/databases/$(database)/documents/leagues/$(leagueId));
+    }
+
+    function isLeagueOwnerOrAdmin(leagueId) {
+      return leagueExists(leagueId) &&
+        (
+          leagueDoc(leagueId).data.ownerId == currentUserId() ||
+          currentUserId() in leagueDoc(leagueId).data.get('admins', [])
+        );
+    }
+
+    function isLeagueMember(leagueId) {
+      return exists(/databases/$(database)/documents/leagueMembers/$(leagueId + '_' + currentUserId())) &&
+        get(/databases/$(database)/documents/leagueMembers/$(leagueId + '_' + currentUserId())).data.status == 'active';
+    }
+
+    match /users/{userId} {
+      allow read: if true;
+      allow create: if isAuthenticated() && userId == currentUserId();
+      allow update: if isAuthenticated() && userId == currentUserId();
+      allow delete: if isAuthenticated() && userId == currentUserId();
+    }
+
+    match /leagues/{leagueId} {
+      allow read: if isAuthenticated();
+      allow create: if isAuthenticated() && request.resource.data.ownerId == currentUserId();
+      allow update: if isAuthenticated() &&
+        (resource.data.ownerId == currentUserId() || currentUserId() in resource.data.get('admins', []));
+      allow delete: if isAuthenticated() && resource.data.ownerId == currentUserId();
+    }
+
+    match /leagueMembers/{memberId} {
+      allow read: if isAuthenticated();
+
+      allow create: if isAuthenticated() && (
+        request.resource.data.userId == currentUserId() ||
+        isLeagueOwnerOrAdmin(request.resource.data.leagueId)
+      );
+
+      allow update: if isAuthenticated() && (
+        resource.data.userId == currentUserId() ||
+        isLeagueOwnerOrAdmin(resource.data.leagueId)
+      );
+
+      allow delete: if isAuthenticated() && (
+        resource.data.userId == currentUserId() ||
+        isLeagueOwnerOrAdmin(resource.data.leagueId)
+      );
+    }
+
+    match /leagueInvites/{inviteId} {
+      allow read: if isAuthenticated();
+
+      allow create: if isAuthenticated() &&
+        leagueExists(request.resource.data.leagueId) &&
+        isLeagueOwnerOrAdmin(request.resource.data.leagueId);
+
+      allow update: if isAuthenticated() &&
+        leagueExists(resource.data.leagueId) &&
+        isLeagueOwnerOrAdmin(resource.data.leagueId);
+
+      allow delete: if isAuthenticated() &&
+        leagueExists(resource.data.leagueId) &&
+        isLeagueOwnerOrAdmin(resource.data.leagueId);
+    }
+
+    // Tournament matches
+    match /tournamentMatches/{matchId} {
+      allow read: if isAuthenticated();
+
+      // Bracket creation (auto-generation for members / manual generation for admins)
+      allow create: if isAuthenticated() &&
+        leagueExists(request.resource.data.leagueId) &&
+        (isLeagueMember(request.resource.data.leagueId) || isLeagueOwnerOrAdmin(request.resource.data.leagueId));
+
+      // Score submission + verification
+      // - Players in the match can submit/edit scores (these remain unverified)
+      // - Owners/admins can also submit and verify
+      allow update: if isAuthenticated() &&
+        leagueExists(resource.data.leagueId) &&
+        (
+          isLeagueOwnerOrAdmin(resource.data.leagueId) ||
+          resource.data.player1Id == currentUserId() ||
+          resource.data.player2Id == currentUserId()
+        );
+
+      allow delete: if isAuthenticated() &&
+        leagueExists(resource.data.leagueId) &&
+        isLeagueOwnerOrAdmin(resource.data.leagueId);
+    }
+
+    // In-app notifications inbox (Expo Go friendly)
+    // NOTE: Collection names are case-sensitive. I support both "notifications" and "Notifications".
+    match /notifications/{notificationId} {
+      // Recipient can read their inbox
+      allow read: if isAuthenticated() && resource.data.toUserId == currentUserId();
+
+      // Any signed-in user can create notifications:
+      // - to themselves (testing), OR
+      // - to a league they own/admin (announcements)
+      allow create: if isAuthenticated() &&
+        request.resource.data.sentBy == currentUserId() &&
+        request.resource.data.toUserId is string &&
+        request.resource.data.title is string &&
+        request.resource.data.body is string &&
+        (
+          // self-send
+          request.resource.data.toUserId == currentUserId() ||
+          // league send (must be owner/admin of that league)
+          (request.resource.data.leagueId is string && isLeagueOwnerOrAdmin(request.resource.data.leagueId))
+        );
+
+      // Recipient can mark as read
+      allow update: if isAuthenticated() && resource.data.toUserId == currentUserId();
+
+      // Optional: allow recipient to delete from their inbox
+      allow delete: if isAuthenticated() && resource.data.toUserId == currentUserId();
+    }
+
+    match /Notifications/{notificationId} {
+      allow read: if isAuthenticated() && resource.data.toUserId == currentUserId();
+
+      allow create: if isAuthenticated() &&
+        request.resource.data.sentBy == currentUserId() &&
+        request.resource.data.toUserId is string &&
+        request.resource.data.title is string &&
+        request.resource.data.body is string &&
+        (
+          request.resource.data.toUserId == currentUserId() ||
+          (request.resource.data.leagueId is string && isLeagueOwnerOrAdmin(request.resource.data.leagueId))
+        );
+
+      allow update: if isAuthenticated() && resource.data.toUserId == currentUserId();
+      allow delete: if isAuthenticated() && resource.data.toUserId == currentUserId();
+    }
+
+    // Push token storage (for future real push)
+    match /userPushTokens/{userId} {
+      allow read: if isAuthenticated() && userId == currentUserId();
+      allow create: if isAuthenticated() && userId == currentUserId();
+      allow update: if isAuthenticated() && userId == currentUserId();
+      allow delete: if isAuthenticated() && userId == currentUserId();
+    }
+
+    // Legacy/unused
+    match /todos/{todoId} {
+      allow read: if isAuthenticated() && resource.data.userId == currentUserId();
+      allow create: if isAuthenticated() && request.resource.data.userId == currentUserId();
+      allow update: if isAuthenticated() && resource.data.userId == currentUserId();
+      allow delete: if isAuthenticated() && resource.data.userId == currentUserId();
+    }
+  }
+}
+

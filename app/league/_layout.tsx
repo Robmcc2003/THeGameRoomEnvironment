@@ -7,6 +7,7 @@ export default function LeagueLayout() {
     <Stack
       screenOptions={{
         headerBackButtonDisplayMode: 'minimal',
+        headerBackVisible: true,
       }}
     >
       <Stack.Screen 
@@ -31,6 +32,7 @@ export default function LeagueLayout() {
           title: 'Add Member',
           presentation: 'card',
           headerBackButtonDisplayMode: 'minimal',
+          headerBackVisible: true,
         }} 
       />
       <Stack.Screen 
@@ -39,6 +41,7 @@ export default function LeagueLayout() {
           title: 'Tournament Bracket',
           presentation: 'card',
           headerBackButtonDisplayMode: 'minimal',
+          headerBackVisible: true,
         }} 
       />
     </Stack>

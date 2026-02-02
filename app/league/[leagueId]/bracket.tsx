@@ -14,11 +14,14 @@ import Colors from '../../../constants/Colors';
 import { collection, doc, getDoc, getDocs, query, where } from 'firebase/firestore';
 import { auth, db } from '../../../FirebaseConfig';
 import { getTournamentBracket, getTournamentStandings, Match, autoGenerateBracketIfNeeded, updateMatchScore, verifyMatchScore } from '../../../components/lib/tournaments';
+import { getGameConfig, GameType } from '../../../components/lib/gameTypes';
 
 type LeagueDoc = {
   name: string;
   game?: string | null;
+  gameType?: GameType | null;
   ownerId: string;
+  admins?: string[];
   numberOfRounds?: number | null;
   tournamentFormat?: 'normal_league' | 'single_elimination' | 'double_elimination' | 'round_robin' | null;
 };
@@ -49,6 +52,8 @@ export default function TournamentBracketScreen() {
   const [selectedMatch, setSelectedMatch] = useState<Match | null>(null);
   const [player1Score, setPlayer1Score] = useState('');
   const [player2Score, setPlayer2Score] = useState('');
+  const [player1Scores, setPlayer1Scores] = useState<Record<string, string>>({});
+  const [player2Scores, setPlayer2Scores] = useState<Record<string, string>>({});
   const [savingScore, setSavingScore] = useState(false);
   const [isAdmin, setIsAdmin] = useState(false);
 
@@ -92,7 +97,7 @@ export default function TournamentBracketScreen() {
       // I check if the user is an owner, league admin, or system admin
       if (uid) {
         const isOwner = leagueData.ownerId === uid;
-        const isLeagueAdmin = Array.isArray(leagueData.admins) && leagueData.admins.includes(uid);
+        const isLeagueAdmin = Array.isArray((leagueData as any).admins) && (leagueData as any).admins.includes(uid);
         
         // I check if the user is a system admin
         const userRef = doc(db, 'users', uid);
@@ -169,33 +174,136 @@ export default function TournamentBracketScreen() {
   // Handle opening score entry modal
   const openScoreModal = (match: Match) => {
     setSelectedMatch(match);
-    setPlayer1Score(match.result?.player1Score?.toString() || '');
-    setPlayer2Score(match.result?.player2Score?.toString() || '');
+    
+    // I determine if we should use game-specific scoring based on league gameType
+    const gameConfig = league ? getGameConfig(league.gameType) : null;
+    const shouldUseGameSpecific = gameConfig && gameConfig.id !== 'GENERIC';
+    
+    // I load existing scores (legacy or game-specific)
+    if (shouldUseGameSpecific && match.result?.player1Scores && match.result?.player2Scores) {
+      // Game-specific scores exist - load them
+      const p1Scores: Record<string, string> = {};
+      const p2Scores: Record<string, string> = {};
+      
+      // I populate all fields from the game config, using existing values or empty strings
+      gameConfig.scoringFields.forEach(field => {
+        p1Scores[field.id] = match.result?.player1Scores?.[field.id]?.toString() || '';
+        p2Scores[field.id] = match.result?.player2Scores?.[field.id]?.toString() || '';
+      });
+      
+      setPlayer1Scores(p1Scores);
+      setPlayer2Scores(p2Scores);
+      setPlayer1Score('');
+      setPlayer2Score('');
+    } else if (shouldUseGameSpecific && gameConfig) {
+      // Game-specific mode but no scores yet - initialize empty fields
+      const p1Scores: Record<string, string> = {};
+      const p2Scores: Record<string, string> = {};
+      
+      gameConfig.scoringFields.forEach(field => {
+        p1Scores[field.id] = '';
+        p2Scores[field.id] = '';
+      });
+      
+      setPlayer1Scores(p1Scores);
+      setPlayer2Scores(p2Scores);
+      setPlayer1Score('');
+      setPlayer2Score('');
+    } else {
+      // Legacy numeric scores
+      setPlayer1Score(match.result?.player1Score?.toString() || '');
+      setPlayer2Score(match.result?.player2Score?.toString() || '');
+      setPlayer1Scores({});
+      setPlayer2Scores({});
+    }
     setScoreModalVisible(true);
   };
 
   // Handle saving match score
   const handleSaveScore = async () => {
-    if (!selectedMatch) return;
+    if (!selectedMatch || !league) return;
     
-    const p1Score = parseInt(player1Score, 10);
-    const p2Score = parseInt(player2Score, 10);
+    const gameConfig = getGameConfig(league.gameType);
+    // I determine if game-specific based on league gameType, not just whether scores exist
+    const isGameSpecific = gameConfig.id !== 'GENERIC';
     
-    if (isNaN(p1Score) || isNaN(p2Score) || p1Score < 0 || p2Score < 0) {
-      Alert.alert('Invalid Scores', 'Please enter valid non-negative numbers for both scores.');
-      return;
-    }
-    
-    try {
-      setSavingScore(true);
-      await updateMatchScore(selectedMatch.id, p1Score, p2Score);
-      Alert.alert('Success', 'Match score submitted. Waiting for admin verification.');
-      setScoreModalVisible(false);
-      await loadBracket(); // Reload bracket to show updated scores
-    } catch (error: any) {
-      Alert.alert('Error', error.message || 'Failed to submit match score.');
-    } finally {
-      setSavingScore(false);
+    if (isGameSpecific) {
+      // Validate game-specific scores
+      const p1Scores: Record<string, any> = {};
+      const p2Scores: Record<string, any> = {};
+      
+      for (const field of gameConfig.scoringFields) {
+        const p1Value = player1Scores[field.id]?.trim() || '';
+        const p2Value = player2Scores[field.id]?.trim() || '';
+        
+        if (field.required && (!p1Value || !p2Value)) {
+          Alert.alert('Invalid Scores', `Please enter ${field.label} for both players.`);
+          return;
+        }
+        
+        // Process player 1 score - only include if it has a value
+        if (p1Value) {
+          if (field.type === 'number') {
+            const num = parseFloat(p1Value);
+            if (isNaN(num) || num < 0) {
+              Alert.alert('Invalid Scores', `${field.label} must be a non-negative number.`);
+              return;
+            }
+            p1Scores[field.id] = num;
+          } else {
+            p1Scores[field.id] = p1Value;
+          }
+        }
+        // I don't include optional fields if they're empty - they won't be in the object
+        
+        // Process player 2 score - only include if it has a value
+        if (p2Value) {
+          if (field.type === 'number') {
+            const num = parseFloat(p2Value);
+            if (isNaN(num) || num < 0) {
+              Alert.alert('Invalid Scores', `${field.label} must be a non-negative number.`);
+              return;
+            }
+            p2Scores[field.id] = num;
+          } else {
+            p2Scores[field.id] = p2Value;
+          }
+        }
+        // I don't include optional fields if they're empty - they won't be in the object
+      }
+      
+      try {
+        setSavingScore(true);
+        await updateMatchScore(selectedMatch.id, p1Scores, p2Scores, league.gameType || undefined);
+        Alert.alert('Success', 'Match score submitted. Waiting for admin verification.');
+        setScoreModalVisible(false);
+        await loadBracket(); // Reload bracket to show updated scores
+      } catch (error: any) {
+        Alert.alert('Error', error.message || 'Failed to submit match score.');
+      } finally {
+        setSavingScore(false);
+      }
+    } else {
+      // Legacy numeric scores
+      const p1Score = parseInt(player1Score, 10);
+      const p2Score = parseInt(player2Score, 10);
+      
+      if (isNaN(p1Score) || isNaN(p2Score) || p1Score < 0 || p2Score < 0) {
+        Alert.alert('Invalid Scores', 'Please enter valid non-negative numbers for both scores.');
+        return;
+      }
+      
+      try {
+        setSavingScore(true);
+        await updateMatchScore(selectedMatch.id, p1Score, p2Score);
+        Alert.alert('Success', 'Match score submitted. Waiting for admin verification.');
+        setScoreModalVisible(false);
+        await loadBracket(); // Reload bracket to show updated scores
+      } catch (error: any) {
+        Alert.alert('Error', error.message || 'Failed to submit match score.');
+      } finally {
+        setSavingScore(false);
+      }
     }
   };
 
@@ -215,6 +323,37 @@ export default function TournamentBracketScreen() {
     if (!userId) return 'TBD';
     const member = memberMap[userId];
     return member?.displayName || userId.substring(0, 8) + '...';
+  };
+
+  // I format match scores for display, showing game-specific scores when available
+  const formatMatchScore = (match: Match, player: 'player1' | 'player2'): string | null => {
+    if (!match.result) return null;
+    
+    // Check for game-specific scores
+    if (player === 'player1' && match.result.player1Scores && league) {
+      const gameConfig = getGameConfig(league.gameType);
+      const primaryField = gameConfig.scoringFields.find(f => f.required) || gameConfig.scoringFields[0];
+      if (primaryField && match.result.player1Scores[primaryField.id] !== undefined) {
+        return String(match.result.player1Scores[primaryField.id]);
+      }
+    }
+    if (player === 'player2' && match.result.player2Scores && league) {
+      const gameConfig = getGameConfig(league.gameType);
+      const primaryField = gameConfig.scoringFields.find(f => f.required) || gameConfig.scoringFields[0];
+      if (primaryField && match.result.player2Scores[primaryField.id] !== undefined) {
+        return String(match.result.player2Scores[primaryField.id]);
+      }
+    }
+    
+    // Fall back to legacy numeric scores
+    if (player === 'player1' && match.result.player1Score !== undefined) {
+      return String(match.result.player1Score);
+    }
+    if (player === 'player2' && match.result.player2Score !== undefined) {
+      return String(match.result.player2Score);
+    }
+    
+    return null;
   };
 
   // I check if this is a bracket-style tournament
@@ -343,9 +482,9 @@ export default function TournamentBracketScreen() {
                             >
                               {player1Name}
                             </Text>
-                            {isCompleted && match.result?.player1Score !== undefined && (
+                            {isCompleted && formatMatchScore(match, 'player1') && (
                               <Text style={{ fontSize: 10, fontWeight: '700', color: textColor, marginLeft: 4 }}>
-                                {String(match.result.player1Score)}
+                                {formatMatchScore(match, 'player1')}
                               </Text>
                             )}
                           </RNView>
@@ -379,9 +518,9 @@ export default function TournamentBracketScreen() {
                             >
                               {player2Name}
                             </Text>
-                            {isCompleted && match.result?.player2Score !== undefined && (
+                            {isCompleted && formatMatchScore(match, 'player2') && (
                               <Text style={{ fontSize: 10, fontWeight: '700', color: textColor, marginLeft: 4 }}>
-                                {String(match.result.player2Score)}
+                                {formatMatchScore(match, 'player2')}
                               </Text>
                             )}
                           </RNView>
@@ -600,9 +739,9 @@ export default function TournamentBracketScreen() {
             }}>
               {player1Name}
             </Text>
-            {isCompleted && match.result?.player1Score !== undefined && (
+            {isCompleted && formatMatchScore(match, 'player1') && (
               <Text style={{ fontSize: 13, opacity: 0.7, marginTop: 4, fontWeight: '600' }}>
-                Score: {String(match.result.player1Score)}
+                Score: {formatMatchScore(match, 'player1')}
               </Text>
             )}
           </RNView>
@@ -617,9 +756,9 @@ export default function TournamentBracketScreen() {
                 }}>
                   {player2Name}
                 </Text>
-                {isCompleted && match.result?.player2Score !== undefined && (
+                {isCompleted && formatMatchScore(match, 'player2') && (
                   <Text style={{ fontSize: 13, opacity: 0.7, marginTop: 4, fontWeight: '600' }}>
-                    Score: {String(match.result.player2Score)}
+                    Score: {formatMatchScore(match, 'player2')}
                   </Text>
                 )}
               </>
@@ -783,6 +922,7 @@ export default function TournamentBracketScreen() {
         options={{
           title: league.name,
           headerBackButtonDisplayMode: 'minimal',
+          headerBackVisible: true,
         }}
       />
       <ScrollView
@@ -794,6 +934,53 @@ export default function TournamentBracketScreen() {
         <RNView style={{ alignItems: 'center', paddingTop: 20, paddingBottom: 10, borderBottomWidth: 2, borderBottomColor: borderColor, marginHorizontal: 20, marginBottom: 20 }}>
           <Logo size="small" showTagline={false} />
         </RNView>
+        
+        {/* Game Type Badge */}
+        {league && league.gameType && (
+          <RNView style={{ 
+            marginHorizontal: 16, 
+            marginBottom: 16,
+            padding: 12,
+            borderRadius: 12,
+            borderWidth: 2,
+            borderColor: tint,
+            backgroundColor: colorScheme === 'dark' ? 'rgba(220,20,60,0.15)' : 'rgba(220,20,60,0.08)',
+            flexDirection: 'row',
+            alignItems: 'center',
+            justifyContent: 'space-between',
+            shadowColor: tint,
+            shadowOffset: { width: 0, height: 2 },
+            shadowOpacity: 0.3,
+            shadowRadius: 4,
+            elevation: 5,
+          }}>
+            <RNView style={{ flex: 1 }}>
+              <Text style={{ fontSize: 12, fontWeight: '700', color: textColor, opacity: 0.7, marginBottom: 4 }}>
+                GAME TYPE
+              </Text>
+              <Text style={{ fontSize: 18, fontWeight: '800', color: tint, letterSpacing: 0.5 }}>
+                {getGameConfig(league.gameType).name}
+              </Text>
+              <Text style={{ fontSize: 12, opacity: 0.6, marginTop: 4, color: textColor }}>
+                {getGameConfig(league.gameType).description}
+              </Text>
+            </RNView>
+            {league.game && (
+              <RNView style={{ 
+                paddingHorizontal: 12, 
+                paddingVertical: 6, 
+                borderRadius: 8, 
+                backgroundColor: tint,
+                borderWidth: 2,
+                borderColor: '#000000',
+              }}>
+                <Text style={{ fontSize: 12, fontWeight: '700', color: '#FFFFFF' }}>
+                  {league.game}
+                </Text>
+              </RNView>
+            )}
+          </RNView>
+        )}
         
         {/* View Mode Toggle */}
         <RNView
@@ -1011,74 +1198,209 @@ export default function TournamentBracketScreen() {
             }}>
               Enter Match Score
             </Text>
-            {selectedMatch && (
+            {selectedMatch && league && (
               <>
                 <Text style={{
                   fontSize: 14,
                   opacity: 0.7,
-                  marginBottom: 20,
+                  marginBottom: 8,
                   color: textColor,
                 }}>
                   Round {selectedMatch.round} • Match {selectedMatch.matchNumber}
                 </Text>
                 
-                <RNView style={{ marginBottom: 16 }}>
-                  <Text style={{
-                    fontSize: 16,
-                    fontWeight: '700',
-                    marginBottom: 8,
-                    color: textColor,
+                {/* Game Type Indicator in Modal */}
+                {league.gameType && (
+                  <RNView style={{
+                    marginBottom: 16,
+                    padding: 10,
+                    borderRadius: 8,
+                    borderWidth: 2,
+                    borderColor: tint,
+                    backgroundColor: colorScheme === 'dark' ? 'rgba(220,20,60,0.1)' : 'rgba(220,20,60,0.05)',
                   }}>
-                    {getPlayerName(selectedMatch.player1Id)}
-                  </Text>
-                  <TextInput
-                    style={{
-                      borderWidth: 2,
-                      borderColor: borderColor,
-                      backgroundColor: cardBg,
-                      borderRadius: 10,
-                      paddingHorizontal: 16,
-                      paddingVertical: 12,
-                      fontSize: 18,
-                      fontWeight: '600',
-                      color: textColor,
-                    }}
-                    placeholder="0"
-                    value={player1Score}
-                    onChangeText={setPlayer1Score}
-                    keyboardType="numeric"
-                    placeholderTextColor="#999999"
-                  />
-                </RNView>
+                    <Text style={{ fontSize: 12, fontWeight: '700', color: textColor, opacity: 0.7, marginBottom: 4 }}>
+                      SCORING SYSTEM
+                    </Text>
+                    <Text style={{ fontSize: 16, fontWeight: '800', color: tint }}>
+                      {getGameConfig(league.gameType).name}
+                    </Text>
+                  </RNView>
+                )}
+                
+                {(() => {
+                  const gameConfig = getGameConfig(league.gameType);
+                  const isGameSpecific = gameConfig.id !== 'GENERIC';
+                  
+                  if (isGameSpecific) {
+                    // Render game-specific scoring fields
+                    return (
+                      <>
+                        <Text style={{
+                          fontSize: 16,
+                          fontWeight: '800',
+                          marginBottom: 16,
+                          color: textColor,
+                        }}>
+                          {getPlayerName(selectedMatch.player1Id)}
+                        </Text>
+                        {gameConfig.scoringFields.map((field) => (
+                          <RNView key={`p1_${field.id}`} style={{ marginBottom: 12 }}>
+                            <RNView style={{ flexDirection: 'row', alignItems: 'center', marginBottom: 6 }}>
+                              <Text style={{
+                                fontSize: 14,
+                                fontWeight: '700',
+                                color: textColor,
+                              }}>
+                                {field.label}
+                              </Text>
+                              {field.required ? (
+                                <Text style={{ fontSize: 14, fontWeight: '700', color: '#DC143C', marginLeft: 4 }}>*</Text>
+                              ) : (
+                                <Text style={{ fontSize: 12, fontWeight: '600', color: textColor, opacity: 0.6, marginLeft: 6 }}>
+                                  (Optional)
+                                </Text>
+                              )}
+                            </RNView>
+                            <TextInput
+                              style={{
+                                borderWidth: 2,
+                                borderColor: field.required && !player1Scores[field.id] ? '#FFC107' : borderColor,
+                                backgroundColor: cardBg,
+                                borderRadius: 10,
+                                paddingHorizontal: 16,
+                                paddingVertical: 12,
+                                fontSize: 16,
+                                fontWeight: '500',
+                                color: textColor,
+                              }}
+                              placeholder={field.placeholder || `Enter ${field.label.toLowerCase()}`}
+                              value={player1Scores[field.id] || ''}
+                              onChangeText={(text) => {
+                                setPlayer1Scores(prev => ({ ...prev, [field.id]: text }));
+                              }}
+                              keyboardType={field.type === 'number' ? 'numeric' : 'default'}
+                              placeholderTextColor="#999999"
+                            />
+                          </RNView>
+                        ))}
+                        
+                        <Text style={{
+                          fontSize: 16,
+                          fontWeight: '800',
+                          marginTop: 16,
+                          marginBottom: 16,
+                          color: textColor,
+                        }}>
+                          {getPlayerName(selectedMatch.player2Id)}
+                        </Text>
+                        {gameConfig.scoringFields.map((field) => (
+                          <RNView key={`p2_${field.id}`} style={{ marginBottom: 12 }}>
+                            <RNView style={{ flexDirection: 'row', alignItems: 'center', marginBottom: 6 }}>
+                              <Text style={{
+                                fontSize: 14,
+                                fontWeight: '700',
+                                color: textColor,
+                              }}>
+                                {field.label}
+                              </Text>
+                              {field.required ? (
+                                <Text style={{ fontSize: 14, fontWeight: '700', color: '#DC143C', marginLeft: 4 }}>*</Text>
+                              ) : (
+                                <Text style={{ fontSize: 12, fontWeight: '600', color: textColor, opacity: 0.6, marginLeft: 6 }}>
+                                  (Optional)
+                                </Text>
+                              )}
+                            </RNView>
+                            <TextInput
+                              style={{
+                                borderWidth: 2,
+                                borderColor: field.required && !player2Scores[field.id] ? '#FFC107' : borderColor,
+                                backgroundColor: cardBg,
+                                borderRadius: 10,
+                                paddingHorizontal: 16,
+                                paddingVertical: 12,
+                                fontSize: 16,
+                                fontWeight: '500',
+                                color: textColor,
+                              }}
+                              placeholder={field.placeholder || `Enter ${field.label.toLowerCase()}`}
+                              value={player2Scores[field.id] || ''}
+                              onChangeText={(text) => {
+                                setPlayer2Scores(prev => ({ ...prev, [field.id]: text }));
+                              }}
+                              keyboardType={field.type === 'number' ? 'numeric' : 'default'}
+                              placeholderTextColor="#999999"
+                            />
+                          </RNView>
+                        ))}
+                      </>
+                    );
+                  } else {
+                    // Render legacy numeric score inputs
+                    return (
+                      <>
+                        <RNView style={{ marginBottom: 16 }}>
+                          <Text style={{
+                            fontSize: 16,
+                            fontWeight: '700',
+                            marginBottom: 8,
+                            color: textColor,
+                          }}>
+                            {getPlayerName(selectedMatch.player1Id)}
+                          </Text>
+                          <TextInput
+                            style={{
+                              borderWidth: 2,
+                              borderColor: borderColor,
+                              backgroundColor: cardBg,
+                              borderRadius: 10,
+                              paddingHorizontal: 16,
+                              paddingVertical: 12,
+                              fontSize: 18,
+                              fontWeight: '600',
+                              color: textColor,
+                            }}
+                            placeholder="0"
+                            value={player1Score}
+                            onChangeText={setPlayer1Score}
+                            keyboardType="numeric"
+                            placeholderTextColor="#999999"
+                          />
+                        </RNView>
 
-                <RNView style={{ marginBottom: 24 }}>
-                  <Text style={{
-                    fontSize: 16,
-                    fontWeight: '700',
-                    marginBottom: 8,
-                    color: textColor,
-                  }}>
-                    {getPlayerName(selectedMatch.player2Id)}
-                  </Text>
-                  <TextInput
-                    style={{
-                      borderWidth: 2,
-                      borderColor: borderColor,
-                      backgroundColor: cardBg,
-                      borderRadius: 10,
-                      paddingHorizontal: 16,
-                      paddingVertical: 12,
-                      fontSize: 18,
-                      fontWeight: '600',
-                      color: textColor,
-                    }}
-                    placeholder="0"
-                    value={player2Score}
-                    onChangeText={setPlayer2Score}
-                    keyboardType="numeric"
-                    placeholderTextColor="#999999"
-                  />
-                </RNView>
+                        <RNView style={{ marginBottom: 24 }}>
+                          <Text style={{
+                            fontSize: 16,
+                            fontWeight: '700',
+                            marginBottom: 8,
+                            color: textColor,
+                          }}>
+                            {getPlayerName(selectedMatch.player2Id)}
+                          </Text>
+                          <TextInput
+                            style={{
+                              borderWidth: 2,
+                              borderColor: borderColor,
+                              backgroundColor: cardBg,
+                              borderRadius: 10,
+                              paddingHorizontal: 16,
+                              paddingVertical: 12,
+                              fontSize: 18,
+                              fontWeight: '600',
+                              color: textColor,
+                            }}
+                            placeholder="0"
+                            value={player2Score}
+                            onChangeText={setPlayer2Score}
+                            keyboardType="numeric"
+                            placeholderTextColor="#999999"
+                          />
+                        </RNView>
+                      </>
+                    );
+                  }
+                })()}
 
                 <RNView style={{ flexDirection: 'row', gap: 12 }}>
                   <TouchableOpacity

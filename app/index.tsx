@@ -7,11 +7,13 @@ import { router } from 'expo-router'
 import { createUserWithEmailAndPassword, onAuthStateChanged, signInWithEmailAndPassword } from 'firebase/auth'
 import { doc, getDoc, serverTimestamp, setDoc } from 'firebase/firestore'
 import React, { useEffect, useState } from 'react'
-import { ActivityIndicator, SafeAreaView, ScrollView, StyleSheet, Text, TextInput, TouchableOpacity, View } from 'react-native'
+import { ActivityIndicator, SafeAreaView, ScrollView, StyleSheet, Text, TouchableOpacity, View } from 'react-native'
 import { auth, db } from '../FirebaseConfig'
 import Logo from '../components/Logo'
+import { AppButton, AppInput, useAppTheme } from '../components/ui'
 
 const index = () => {
+  const t = useAppTheme();
   const [email, setEmail] = useState('');
   const [password, setPassword] = useState('');
   const [username, setUsername] = useState('');
@@ -46,16 +48,27 @@ const index = () => {
         const userRef = doc(db, 'users', userCredential.user.uid);
         const userSnap = await getDoc(userRef);
         
-        if (!userSnap.exists() || !userSnap.data()?.username) {
-          const emailUsername = email.split('@')[0];
-          await setDoc(userRef, {
-            email: email.toLowerCase(),
-            emailLower: email.toLowerCase(),
-            username: userSnap.data()?.username || emailUsername,
-            displayName: userSnap.data()?.displayName || emailUsername,
-            updatedAt: serverTimestamp(),
-            ...(userSnap.exists() ? {} : { createdAt: serverTimestamp() }),
-          }, { merge: true });
+        const existing = userSnap.exists() ? (userSnap.data() as any) : null;
+        const emailUsername = email.split('@')[0];
+        const usernameValue = (existing?.username || emailUsername).trim();
+        const displayNameValue = (existing?.displayName || existing?.username || emailUsername).trim();
+        const needsSearchFields = !existing?.usernameLower || !existing?.displayNameLower;
+
+        if (!userSnap.exists() || !existing?.username || needsSearchFields) {
+          await setDoc(
+            userRef,
+            {
+              email: email.toLowerCase(),
+              emailLower: email.toLowerCase(),
+              username: usernameValue,
+              usernameLower: usernameValue.toLowerCase(),
+              displayName: displayNameValue,
+              displayNameLower: displayNameValue.toLowerCase(),
+              updatedAt: serverTimestamp(),
+              ...(userSnap.exists() ? {} : { createdAt: serverTimestamp() }),
+            },
+            { merge: true }
+          );
         }
         
         router.replace('/(tabs)');
@@ -71,11 +84,14 @@ const index = () => {
     const userRef = doc(db, 'users', userId);
     const userSnap = await getDoc(userRef);
     
+    const usernameValue = username.trim();
     const userData = {
       email: email.toLowerCase(),
       emailLower: email.toLowerCase(),
-      username: username.trim(),
-      displayName: username.trim(),
+      username: usernameValue,
+      usernameLower: usernameValue.toLowerCase(),
+      displayName: usernameValue,
+      displayNameLower: usernameValue.toLowerCase(),
       role: role,
       createdAt: userSnap.exists() ? userSnap.data().createdAt : serverTimestamp(),
       updatedAt: serverTimestamp(),
@@ -87,12 +103,18 @@ const index = () => {
   const checkUsernameAvailability = async (username: string): Promise<boolean> => {
     try {
       const { collection, query, where, getDocs } = await import('firebase/firestore');
+      const usernameLower = username.trim().toLowerCase();
       const usersQuery = query(
         collection(db, 'users'),
-        where('username', '==', username.trim())
+        where('usernameLower', '==', usernameLower)
       );
       const snapshot = await getDocs(usersQuery);
-      return snapshot.empty;
+      if (!snapshot.empty) return false;
+
+      // I fall back to the legacy field for older user documents.
+      const legacyQuery = query(collection(db, 'users'), where('username', '==', username.trim()));
+      const legacySnap = await getDocs(legacyQuery);
+      return legacySnap.empty;
     } catch (error: any) {
       if (error?.code === 'permission-denied') {
         return true;
@@ -163,7 +185,7 @@ const index = () => {
 
   if (loading) {
     return (
-      <SafeAreaView style={styles.container}>
+      <SafeAreaView style={[styles.container, { backgroundColor: t.colors.background }]}>
         <View style={styles.loadingContainer}>
           <Logo size="large" showTagline={true} />
           <ActivityIndicator size="large" color="#DC143C" style={{ marginTop: 30 }} />
@@ -174,7 +196,7 @@ const index = () => {
   }
 
   return (
-    <SafeAreaView style={styles.container}>
+    <SafeAreaView style={[styles.container, { backgroundColor: t.colors.background }]}>
       <ScrollView 
         contentContainerStyle={styles.scrollContent}
         keyboardShouldPersistTaps="handled"
@@ -190,13 +212,12 @@ const index = () => {
           
           {isSignUp && (
             <>
-              <TextInput 
-                style={styles.textInput} 
-                placeholder="username" 
-                value={username} 
+              <AppInput
+                label="Username"
+                value={username}
                 onChangeText={setUsername}
                 autoCapitalize="none"
-                placeholderTextColor="#999999"
+                placeholder="username"
                 maxLength={20}
               />
               
@@ -236,52 +257,42 @@ const index = () => {
             </>
           )}
           
-          <TextInput 
-            style={styles.textInput} 
-            placeholder="email" 
-            value={email} 
+          <AppInput
+            label="Email"
+            value={email}
             onChangeText={setEmail}
             autoCapitalize="none"
             keyboardType="email-address"
-            placeholderTextColor="#999999"
+            placeholder="email"
           />
           
-          <TextInput 
-            style={styles.textInput} 
-            placeholder="password" 
-            value={password} 
+          <AppInput
+            label="Password"
+            value={password}
             onChangeText={setPassword}
             secureTextEntry
             autoCapitalize="none"
-            placeholderTextColor="#999999"
+            placeholder="password"
           />
           
           {!isSignUp && (
-            <TouchableOpacity 
-              style={[styles.button, signingIn && styles.buttonDisabled]} 
+            <AppButton
+              title="Login"
               onPress={signIn}
+              loading={signingIn}
               disabled={signingIn || signingUp}
-            >
-              {signingIn ? (
-                <ActivityIndicator color="#FFFFFF" />
-              ) : (
-                <Text style={styles.text}>Login</Text>
-              )}
-            </TouchableOpacity>
+              style={{ marginTop: 8 }}
+            />
           )}
           
           {isSignUp && (
-            <TouchableOpacity 
-              style={[styles.button, signingUp && styles.buttonDisabled]} 
+            <AppButton
+              title="Create Account"
               onPress={signUp}
+              loading={signingUp}
               disabled={signingIn || signingUp}
-            >
-              {signingUp ? (
-                <ActivityIndicator color="#FFFFFF" />
-              ) : (
-                <Text style={styles.text}>Create Account</Text>
-              )}
-            </TouchableOpacity>
+              style={{ marginTop: 8 }}
+            />
           )}
           
           <TouchableOpacity 

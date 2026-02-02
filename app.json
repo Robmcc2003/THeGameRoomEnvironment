@@ -15,7 +15,9 @@
     },
     "ios": {
       "supportsTablet": true,
-      "bundleIdentifier": "com.robmcc2003.THeGameRoomEnvironment"
+      "bundleIdentifier": "com.robmcc2003.THeGameRoomEnvironment",
+      "buildNumber": "1",
+      "runtimeVersion": "1.0.0"
     },
     "android": {
       "adaptiveIcon": {
@@ -23,7 +25,10 @@
         "backgroundColor": "#ffffff"
       },
       "edgeToEdgeEnabled": true,
-      "predictiveBackGestureEnabled": false
+      "predictiveBackGestureEnabled": false,
+      "runtimeVersion": {
+        "policy": "appVersion"
+      }
     },
     "web": {
       "bundler": "metro",
@@ -31,10 +36,20 @@
       "favicon": "./assets/images/favicon.png"
     },
     "plugins": [
-      "expo-router"
+      "expo-router",
+      "expo-notifications"
     ],
     "experiments": {
       "typedRoutes": true
+    },
+    "extra": {
+      "router": {},
+      "eas": {
+        "projectId": "4305b05e-3f3c-407c-a53f-adbcf20d877d"
+      }
+    },
+    "updates": {
+      "url": "https://u.expo.dev/4305b05e-3f3c-407c-a53f-adbcf20d877d"
     }
   }
 }

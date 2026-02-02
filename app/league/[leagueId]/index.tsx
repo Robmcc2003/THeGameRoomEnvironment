@@ -7,8 +7,9 @@ import { Stack } from 'expo-router/stack';
 import { doc, getDoc } from 'firebase/firestore';
 import React, { useCallback, useEffect, useMemo, useState } from 'react';
 import {
-  ActivityIndicator, Alert, FlatList, Image, ListRenderItem, View as RNView, TouchableOpacity,
+  ActivityIndicator, Alert, FlatList, Image, ListRenderItem, Share, View as RNView, TouchableOpacity,
 } from 'react-native';
+import * as Linking from 'expo-linking';
 import { auth, db } from '../../../FirebaseConfig';
 import Logo from '../../../components/Logo';
 import { Text, View } from '../../../components/Themed';
@@ -16,13 +17,17 @@ import { deleteLeague } from '../../../components/lib/leagues';
 import {
   cancelInvite, listInvites, listMembers, removeMember, resendInvite, setMemberRole,
 } from '../../../components/lib/members';
-import { addDummyTournamentData, generateBracketMatches, joinTournament } from '../../../components/lib/tournaments';
+import { addDummyTournamentData, generateBracketMatches, joinTournament, hasExistingMatches, deleteAllMatches } from '../../../components/lib/tournaments';
+import { sendInAppNotificationToLeague } from '../../../components/lib/notifications';
 import { useColorScheme } from '../../../components/useColorScheme';
 import Colors from '../../../constants/Colors';
+import { GameType, getGameConfig } from '../../../components/lib/gameTypes';
+import { AppBadge, AppCard } from '../../../components/ui';
 
 type LeagueDoc = {
   name: string;
   game?: string | null;
+  gameType?: GameType | null;
   ownerId: string;
   admins?: string[];
   createdAt?: any;
@@ -99,6 +104,8 @@ export default function LeagueDetailScreen() {
   const [refreshing, setRefreshing] = useState(false); // Loading state for pull-to-refresh
   const [rows, setRows] = useState<Row[]>([]); // Combined list of members and invites
   const [actioningId, setActioningId] = useState<string | null>(null); // ID of item currently being acted upon
+  const [hasMatches, setHasMatches] = useState<boolean>(false); // Whether matches already exist
+  const [checkingMatches, setCheckingMatches] = useState<boolean>(false); // Loading state for checking matches
 
   // I check the current user's permissions and membership status
   const uid = auth.currentUser?.uid ?? null;
@@ -218,25 +225,144 @@ export default function LeagueDetailScreen() {
     }
   }, [leagueId, loadList, router]);
 
-  const onGenerateMatches = useCallback(async () => {
+  // Check if matches exist
+  const checkMatches = useCallback(async () => {
     if (!leagueId) return;
     try {
-      setActioningId('generate');
-      await generateBracketMatches(String(leagueId));
+      setCheckingMatches(true);
+      const exists = await hasExistingMatches(String(leagueId));
+      setHasMatches(exists);
+    } catch (error) {
+      setHasMatches(false);
+    } finally {
+      setCheckingMatches(false);
+    }
+  }, [leagueId]);
+
+  // Load matches status when league or members change
+  useEffect(() => {
+    if (league && (league.tournamentFormat === 'single_elimination' || league.tournamentFormat === 'double_elimination')) {
+      checkMatches();
+    }
+  }, [league, checkMatches]);
+
+  const onGenerateMatches = useCallback(async () => {
+    if (!leagueId) return;
+    
+    // Check if matches already exist
+    const matchesExist = await hasExistingMatches(String(leagueId));
+    
+    if (matchesExist) {
+      // Ask if user wants to regenerate
       Alert.alert(
-        'Success!', 
-        'Tournament bracket matches have been generated. You can now view the bracket.',
+        'Matches Already Exist',
+        'This tournament already has matches. Do you want to delete existing matches and generate a new bracket?',
         [
-          { text: 'View Bracket', onPress: () => router.push({ pathname: '/league/[leagueId]/bracket', params: { leagueId: String(leagueId) } }) },
-          { text: 'OK' }
+          { text: 'Cancel', style: 'cancel' },
+          {
+            text: 'Regenerate',
+            style: 'destructive',
+            onPress: async () => {
+              try {
+                setActioningId('generate');
+                // Delete existing matches first
+                await deleteAllMatches(String(leagueId));
+                // Then generate new matches
+                await generateBracketMatches(String(leagueId));
+                setHasMatches(true);
+                Alert.alert(
+                  'Success!', 
+                  'Tournament bracket has been regenerated with current participants.',
+                  [
+                    { text: 'View Bracket', onPress: () => router.push({ pathname: '/league/[leagueId]/bracket', params: { leagueId: String(leagueId) } }) },
+                    { text: 'OK' }
+                  ]
+                );
+              } catch (e: any) {
+                Alert.alert('Could not regenerate matches', e?.message ?? 'Unknown error');
+              } finally {
+                setActioningId(null);
+              }
+            }
+          }
         ]
       );
-    } catch (e: any) {
-      Alert.alert('Could not generate matches', e?.message ?? 'Unknown error');
-    } finally {
-      setActioningId(null);
+    } else {
+      // Generate matches for the first time
+      try {
+        setActioningId('generate');
+        await generateBracketMatches(String(leagueId));
+        setHasMatches(true);
+        Alert.alert(
+          'Success!', 
+          'Tournament bracket matches have been generated. You can now view the bracket.',
+          [
+            { text: 'View Bracket', onPress: () => router.push({ pathname: '/league/[leagueId]/bracket', params: { leagueId: String(leagueId) } }) },
+            { text: 'OK' }
+          ]
+        );
+      } catch (e: any) {
+        Alert.alert('Could not generate matches', e?.message ?? 'Unknown error');
+      } finally {
+        setActioningId(null);
+      }
     }
   }, [leagueId, router]);
+
+  // I generate a shareable invite link so users can join the tournament from their phone.
+  const onShareInviteLink = useCallback(async () => {
+    if (!leagueId) return;
+    try {
+      const url = Linking.createURL(`/league/${String(leagueId)}`);
+      await Share.share({
+        message:
+          `Join my tournament on The Game Room:\n\n${url}\n\n` +
+          `If you don't have the app installed, open this link in Expo Go.`,
+      });
+    } catch (e: any) {
+      Alert.alert('Could not share link', e?.message ?? 'Unknown error');
+    }
+  }, [leagueId]);
+
+  // I let admins send a simple announcement to everyone in the league.
+  const onSendLeagueNotification = useCallback(async () => {
+    if (!leagueId || !league) return;
+    if (!canManageMembers) {
+      Alert.alert('No access', 'Only the owner/admin can send notifications.');
+      return;
+    }
+
+    Alert.prompt(
+      'Send notification',
+      'Enter the message you want to send to all members.',
+      [
+        { text: 'Cancel', style: 'cancel' },
+        {
+          text: 'Send',
+          onPress: async (text) => {
+            const message = (text ?? '').trim();
+            if (!message) return;
+            try {
+              setActioningId('notify');
+              await sendInAppNotificationToLeague({
+                leagueId: String(leagueId),
+                title: `Update: ${league.name}`,
+                body: message,
+                type: 'admin_announcement',
+                data: { leagueId: String(leagueId) },
+              });
+              Alert.alert('Sent', 'Your notification has been added to everyone’s inbox.');
+            } catch (e: any) {
+              Alert.alert('Could not send', e?.message ?? 'Unknown error');
+            } finally {
+              setActioningId(null);
+            }
+          },
+        },
+      ],
+      'plain-text'
+    );
+  }, [canManageMembers, league, leagueId]);
 
   const onAddDummyData = useCallback(async () => {
     if (!leagueId) return;
@@ -351,13 +477,38 @@ export default function LeagueDetailScreen() {
         </RNView>
         
         {/* Header card */}
-        <View style={{ borderRadius: 16, borderWidth: 2, borderColor, backgroundColor: cardBg, padding: 20, shadowColor: '#000000', shadowOffset: { width: 0, height: 2 }, shadowOpacity: 0.1, shadowRadius: 4, elevation: 3 }}>
+        <AppCard>
           <Text style={{ fontSize: 28, fontWeight: '900', letterSpacing: 0.5 }}>{league.name}</Text>
           {league.game ? <Text style={{ marginTop: 6, opacity: 0.7, fontSize: 16, fontWeight: '600' }}>{league.game}</Text> : null}
-        </View>
+          {league.gameType && (
+            <RNView style={{ 
+              marginTop: 12, 
+              padding: 10, 
+              borderRadius: 10, 
+              borderWidth: 2, 
+              borderColor: tint,
+              backgroundColor: colorScheme === 'dark' ? 'rgba(220,20,60,0.15)' : 'rgba(220,20,60,0.08)',
+              flexDirection: 'row',
+              alignItems: 'center',
+              justifyContent: 'space-between',
+            }}>
+              <RNView style={{ flex: 1 }}>
+                <Text style={{ fontSize: 11, fontWeight: '700', color: textColor, opacity: 0.7, marginBottom: 4 }}>
+                  GAME TYPE
+                </Text>
+                <Text style={{ fontSize: 16, fontWeight: '800', color: tint, letterSpacing: 0.3 }}>
+                  {getGameConfig(league.gameType).name}
+                </Text>
+                <Text style={{ fontSize: 11, opacity: 0.6, marginTop: 2, color: textColor }}>
+                  {getGameConfig(league.gameType).description}
+                </Text>
+              </RNView>
+            </RNView>
+          )}
+        </AppCard>
 
         {/* Meta card */}
-        <View style={{ borderRadius: 16, borderWidth: 2, borderColor, backgroundColor: cardBg, padding: 18, gap: 12 }}>
+        <AppCard style={{ gap: 12 }}>
           <Text style={{ fontSize: 20, fontWeight: '800', letterSpacing: 0.3 }}>Details</Text>
           <View style={{ gap: 6 }}>
             <Text><Text style={{ fontWeight: '700' }}>Owner: </Text><Text style={{ opacity: 0.8 }}>{league.ownerId}</Text></Text>
@@ -379,11 +530,11 @@ export default function LeagueDetailScreen() {
               </RNView>
             ) : null}
           </View>
-        </View>
+        </AppCard>
 
         {/* Tournament Settings card */}
         {(league.numberOfRounds || league.maxParticipants || league.rules || league.tournamentFormat || league.matchDuration) ? (
-          <View style={{ borderRadius: 16, borderWidth: 2, borderColor, backgroundColor: cardBg, padding: 18, gap: 12 }}>
+          <AppCard style={{ gap: 12 }}>
             <Text style={{ fontSize: 20, fontWeight: '800', letterSpacing: 0.3 }}>Tournament Settings</Text>
             <View style={{ gap: 8 }}>
               {league.tournamentFormat ? (
@@ -405,7 +556,7 @@ export default function LeagueDetailScreen() {
                 </RNView>
               ) : null}
             </View>
-          </View>
+          </AppCard>
         ) : null}
 
         {/* Tournament Dates card */}
@@ -515,11 +666,31 @@ export default function LeagueDetailScreen() {
               </TouchableOpacity>
             ) : null}
           </RNView>
-          {/* Generate Matches button (for owners/admins of bracket tournaments) */}
-          {canManageMembers && league && (league.tournamentFormat === 'single_elimination' || league.tournamentFormat === 'double_elimination') && (
+
+          {/* Share invite link */}
+          <TouchableOpacity
+            onPress={onShareInviteLink}
+            style={{
+              paddingVertical: 12,
+              paddingHorizontal: 16,
+              borderRadius: 10,
+              borderWidth: 2,
+              borderColor: borderColor,
+              backgroundColor: cardBg,
+              alignItems: 'center',
+            }}
+          >
+            <Text style={{ color: textColor, fontWeight: '800', fontSize: 16 }}>Share invite link</Text>
+            <Text style={{ marginTop: 4, color: textColor, opacity: 0.6, fontWeight: '600', fontSize: 12 }}>
+              Send to friends so they can open this league and join
+            </Text>
+          </TouchableOpacity>
+
+          {/* Admin: send announcement */}
+          {canManageMembers ? (
             <TouchableOpacity
-              onPress={onGenerateMatches}
-              disabled={!!actioningId}
+              onPress={onSendLeagueNotification}
+              disabled={actioningId === 'notify'}
               style={{
                 paddingVertical: 12,
                 paddingHorizontal: 16,
@@ -528,18 +699,97 @@ export default function LeagueDetailScreen() {
                 borderColor: borderColor,
                 backgroundColor: cardBg,
                 alignItems: 'center',
-                opacity: actioningId === 'generate' ? 0.7 : 1,
+                opacity: actioningId === 'notify' ? 0.7 : 1,
               }}
             >
-              {actioningId === 'generate' ? (
-                <RNView style={{ flexDirection: 'row', alignItems: 'center', gap: 8 }}>
-                  <ActivityIndicator size="small" color={tint} />
-                  <Text style={{ color: textColor, fontWeight: '700', fontSize: 16 }}>Generating Matches...</Text>
-                </RNView>
-              ) : (
-                <Text style={{ color: textColor, fontWeight: '700', fontSize: 16 }}>Generate Bracket Matches</Text>
-              )}
+              <Text style={{ color: textColor, fontWeight: '800', fontSize: 16 }}>
+                {actioningId === 'notify' ? 'Sending…' : 'Send announcement'}
+              </Text>
+              <Text style={{ marginTop: 4, color: textColor, opacity: 0.6, fontWeight: '600', fontSize: 12 }}>
+                Adds a notification to every member’s inbox
+              </Text>
             </TouchableOpacity>
+          ) : null}
+
+          {/* Generate Matches button (for owners/admins of bracket tournaments) */}
+          {canManageMembers && league && (league.tournamentFormat === 'single_elimination' || league.tournamentFormat === 'double_elimination') && (
+            <RNView style={{ marginTop: 16, gap: 8 }}>
+              {/* Tournament Status Info */}
+              <RNView style={{
+                padding: 12,
+                borderRadius: 10,
+                borderWidth: 2,
+                borderColor: hasMatches ? '#28A745' : '#FFC107',
+                backgroundColor: hasMatches ? (colorScheme === 'dark' ? 'rgba(40,167,69,0.1)' : 'rgba(40,167,69,0.05)') : (colorScheme === 'dark' ? 'rgba(255,193,7,0.1)' : 'rgba(255,193,7,0.05)'),
+                flexDirection: 'row',
+                alignItems: 'center',
+                justifyContent: 'space-between',
+              }}>
+                <RNView style={{ flex: 1 }}>
+                  <Text style={{ fontSize: 14, fontWeight: '700', color: textColor, marginBottom: 4 }}>
+                    Tournament Status
+                  </Text>
+                  {checkingMatches ? (
+                    <RNView style={{ flexDirection: 'row', alignItems: 'center', gap: 6 }}>
+                      <ActivityIndicator size="small" color={tint} />
+                      <Text style={{ fontSize: 12, color: textColor, opacity: 0.7 }}>Checking...</Text>
+                    </RNView>
+                  ) : hasMatches ? (
+                    <Text style={{ fontSize: 12, color: '#28A745', fontWeight: '600' }}>
+                      ✓ Bracket Generated
+                    </Text>
+                  ) : (
+                    <Text style={{ fontSize: 12, color: '#FFC107', fontWeight: '600' }}>
+                      ⏳ No Bracket Yet
+                    </Text>
+                  )}
+                </RNView>
+                <Text style={{ fontSize: 12, color: textColor, opacity: 0.7, fontWeight: '600' }}>
+                  {rows.filter(r => r.kind === 'member').length} Participants
+                </Text>
+              </RNView>
+
+              {/* Generate/Regenerate Button */}
+              <TouchableOpacity
+                onPress={onGenerateMatches}
+                disabled={!!actioningId || checkingMatches || rows.filter(r => r.kind === 'member').length < 2}
+                style={{
+                  paddingVertical: 14,
+                  paddingHorizontal: 16,
+                  borderRadius: 10,
+                  borderWidth: 2,
+                  borderColor: hasMatches ? borderColor : tint,
+                  backgroundColor: hasMatches ? cardBg : tint,
+                  alignItems: 'center',
+                  opacity: (actioningId === 'generate' || checkingMatches || rows.filter(r => r.kind === 'member').length < 2) ? 0.7 : 1,
+                  shadowColor: hasMatches ? 'transparent' : tint,
+                  shadowOffset: { width: 0, height: 2 },
+                  shadowOpacity: hasMatches ? 0 : 0.3,
+                  shadowRadius: 4,
+                  elevation: hasMatches ? 0 : 3,
+                }}
+              >
+                {actioningId === 'generate' ? (
+                  <RNView style={{ flexDirection: 'row', alignItems: 'center', gap: 8 }}>
+                    <ActivityIndicator size="small" color={hasMatches ? tint : '#FFFFFF'} />
+                    <Text style={{ color: hasMatches ? textColor : '#FFFFFF', fontWeight: '700', fontSize: 16 }}>
+                      {hasMatches ? 'Regenerating...' : 'Generating Matches...'}
+                    </Text>
+                  </RNView>
+                ) : (
+                  <RNView style={{ alignItems: 'center' }}>
+                    <Text style={{ color: hasMatches ? textColor : '#FFFFFF', fontWeight: '700', fontSize: 16 }}>
+                      {hasMatches ? 'Regenerate Bracket' : 'Generate Bracket Matches'}
+                    </Text>
+                    {rows.filter(r => r.kind === 'member').length < 2 && (
+                      <Text style={{ color: hasMatches ? textColor : '#FFFFFF', fontSize: 12, opacity: 0.8, marginTop: 4 }}>
+                        Need at least 2 participants
+                      </Text>
+                    )}
+                  </RNView>
+                )}
+              </TouchableOpacity>
+            </RNView>
           )}
 
           {/* Add Dummy Data Button (for testing) */}
