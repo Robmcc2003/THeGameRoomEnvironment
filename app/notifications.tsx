@@ -1,5 +1,5 @@
-// Notifications Inbox Screen
-// I show in-app notifications stored in Firestore.
+// I display the in-app notifications inbox from Firestore with pull-to-refresh and mark-as-read.
+// Ref: Array filter - https://www.w3schools.com/jsref/jsref_filter.asp
 import { Stack, useRouter } from 'expo-router';
 import React, { useEffect, useMemo, useState } from 'react';
 import { ActivityIndicator, FlatList, RefreshControl, SafeAreaView, TouchableOpacity, View as RNView } from 'react-native';

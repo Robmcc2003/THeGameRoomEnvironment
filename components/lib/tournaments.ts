@@ -1,3 +1,5 @@
+// I handle tournaments: join, bracket generation, matches, scores, verification, standings, and user stats. I use Firestore for persistence.
+// Ref: Bracket generation algorithm - https://chatgpt.com/share/6973b4c9-23c8-8007-98f1-d6533d1d01fe
 import { auth, db } from '../../FirebaseConfig';
 import { collection, query, where, getDocs, doc, getDoc, setDoc, serverTimestamp, updateDoc, deleteDoc } from 'firebase/firestore';
 import { getGameConfig } from './gameTypes';
@@ -35,7 +37,6 @@ export type TournamentBracket = {
   currentRound: number;
 };
 
-/* User joining tournament code (lines 37-101) uses Firestore setDoc - https://firebase.google.com/docs/firestore/manage-data/add-data#set_a_document */
 export async function joinTournament(leagueId: string): Promise<void> {
   const current = auth.currentUser;
   if (!current) throw new Error('You must be signed in.');
@@ -419,8 +420,8 @@ export async function getTournamentStandings(leagueId: string) {
   const matchesSnap = await getDocs(matchesQuery);
   const matches = matchesSnap.docs.map(d => d.data() as any);
 
-  // Filter to only verified matches
-  const verifiedMatches = matches.filter(m => m.result?.verified === true);
+  // Filter to only verified matches (accept boolean or string 'true')
+  const verifiedMatches = matches.filter(m => m.result?.verified === true || m.result?.verified === 'true');
 
   // Calculate standings for each member
   const standings = members.map(member => {
@@ -433,7 +434,7 @@ export async function getTournamentStandings(leagueId: string) {
     const losses = verifiedMatches.filter(
       m => (m.player1Id === member.userId || m.player2Id === member.userId) && // They played in this match
            m.result?.winnerId !== member.userId && // But they didn't win
-           m.result?.verified === true // And the match is verified
+           (m.result?.verified === true || m.result?.verified === 'true') // And the match is verified
     ).length;
 
     // Calculate win rate percentage
@@ -1162,22 +1163,28 @@ export async function getUserOverallStats(userId: string): Promise<{
     const matchesSnap = await getDocs(matchesQuery);
     const matches = matchesSnap.docs.map(d => d.data() as any);
 
+    // I only count verified matches (unverified scores should not affect stats).
+    // Accept both boolean true and string 'true' (Firestore/serialization can vary).
+    const verifiedMatches = matches.filter(m => m.result?.winnerId && (m.result?.verified === true || m.result?.verified === 'true'));
+
     // Count wins and losses for this league
-    const wins = matches.filter(m => m.result?.winnerId === userId).length;
-    const losses = matches.filter(
+    const wins = verifiedMatches.filter(m => m.result?.winnerId === userId).length;
+    const losses = verifiedMatches.filter(
       m => (m.player1Id === userId || m.player2Id === userId) &&
-           m.result?.winnerId !== userId &&
-           m.result?.winnerId // Match must have a winner
+           m.result?.winnerId !== userId
     ).length;
 
     totalWins += wins;
     totalLosses += losses;
 
-    // Check if user won the tournament (they're the winner of the final match)
-    const finalMatch = matches
-      .filter(m => m.round === 1 && m.matchNumber === 1)
-      .find(m => m.status === 'completed');
-    
+    // Check if user won the tournament (they're the winner of the final match).
+    // Final = any match in the highest round (usually matchNumber 1; we don't rely on that).
+    const finalRound = Math.max(...matches.map(m => Number(m.round || 0)), 0);
+    const finalRoundMatches = verifiedMatches.filter(m => Number(m.round || 0) === finalRound);
+    const finalMatch = finalRoundMatches.length > 0
+      ? finalRoundMatches.sort((a, b) => (a.matchNumber || 0) - (b.matchNumber || 0))[0]
+      : undefined;
+
     if (finalMatch && finalMatch.result?.winnerId === userId) {
       tournamentResults.push({ leagueId, won: true });
     } else if (matches.length > 0) {
@@ -1262,15 +1269,14 @@ export async function getUserTournamentHistory(userId: string): Promise<Array<{
       
       if (!progress) continue;
 
-      // Check if tournament has final round matches with scores entered
-      // Round 1 is the final round (championship match)
-      const finalMatchesQuery = query(
-        collection(db, 'tournamentMatches'),
-        where('leagueId', '==', member.leagueId),
-        where('round', '==', 1)
-      );
-      const finalMatchesSnap = await getDocs(finalMatchesQuery);
-      const finalMatches = finalMatchesSnap.docs.map(d => d.data() as any);
+      // Check if tournament has final round matches with scores entered.
+      // For bracket tournaments, the final round is the highest round number.
+      const leagueMatchesQuery = query(collection(db, 'tournamentMatches'), where('leagueId', '==', member.leagueId));
+      const leagueMatchesSnap = await getDocs(leagueMatchesQuery);
+      const leagueMatches = leagueMatchesSnap.docs.map(d => d.data() as any);
+
+      const maxRound = Math.max(...leagueMatches.map(m => Number(m.round || 0)), 0) || 1;
+      const finalMatches = leagueMatches.filter(m => Number(m.round || 0) === maxRound);
       
       // Tournament is considered historical if:
       // 1. There are final round matches AND at least one has scores entered, OR
@@ -1398,6 +1404,7 @@ export async function getUserGameSpecificStats(userId: string, gameType: string)
 
     for (const match of matches) {
       if (!match.result) continue;
+      if (match.result?.verified !== true && match.result?.verified !== 'true') continue;
 
       const isPlayer1 = match.player1Id === userId;
       const isPlayer2 = match.player2Id === userId;

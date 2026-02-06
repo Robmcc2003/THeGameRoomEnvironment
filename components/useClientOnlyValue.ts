@@ -1,4 +1,4 @@
-// This function is web-only as native doesn't currently support server (or build-time) rendering.
+// I am the web implementation: I return the client value directly since native does not use server rendering.
 export function useClientOnlyValue<S, C>(server: S, client: C): S | C {
   return client;
 }

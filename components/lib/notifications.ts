@@ -1,3 +1,4 @@
+// I handle in-app notifications: Firestore collection, registration, and listening for new notifications; I use Expo Notifications for display.
 import { auth, db } from '../../FirebaseConfig';
 import Constants from 'expo-constants';
 import * as Notifications from 'expo-notifications';

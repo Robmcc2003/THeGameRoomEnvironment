@@ -1,12 +1,11 @@
-/* Add Member Screen */
-/* Form handling code (lines 18-44) uses React Native components - https://reactnative.dev/docs/textinput */
+// I let league owners/admins add a member by email (add directly or send an invite).
 import React, { useState } from 'react';
 import { View, Text, TextInput, Pressable, ActivityIndicator, Alert } from 'react-native';
 import { useLocalSearchParams, useRouter } from 'expo-router';
 import { addMemberToLeague } from '../../../components/lib/members';
 
 export default function AddMemberScreen() {
-  // I get the league ID from route parameters
+  // league ID from route parameters
   const params = useLocalSearchParams();
   const leagueId =
     (Array.isArray(params.leagueId) ? params.leagueId[0] : (params.leagueId as string | undefined)) ??
@@ -36,7 +35,7 @@ export default function AddMemberScreen() {
           'Bad news 😢, We cant find this member just yet but we have saved their details!'
         );
       }
-      router.back(); // return to league page
+      router.back(); // return to the league page
     } catch (err: any) {
       Alert.alert('Could not add member', err?.message ?? 'Unknown error');
     } finally {

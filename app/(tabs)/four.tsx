@@ -1,8 +1,5 @@
-// My Leagues Screen
-// I display user's leagues with real-time updates and allow league creation.
-/* Real-time listener code (lines 92-166) adapted from Firestore documentation - https://firebase.google.com/docs/firestore/query-data/listen */
-/* I modified the listener structure to handle multiple leagues and cleanup */
-
+// displaying the user's leagues with real-time Firestore listeners and allow creating new leagues and tournaments.
+// Ref: Firestore real-time listener - https://firebase.google.com/docs/firestore/query-data/listen
 import { useRouter } from 'expo-router';
 import { onAuthStateChanged } from 'firebase/auth';
 import { Unsubscribe, addDoc, collection, doc, getDoc, onSnapshot as onDocSnapshot, onSnapshot, query,
@@ -18,6 +15,7 @@ import { styles } from '../../components/style.four';
 import { getUserProgress } from '../../components/lib/tournaments';
 import { GameType, getAvailableGameTypes } from '../../components/lib/gameTypes';
 import { AppButton, AppCard, AppInput, useAppTheme } from '../../components/ui';
+import { useColorScheme } from '../../components/useColorScheme';
 
 type League = { 
   id: string;
@@ -40,10 +38,16 @@ type LeagueProgress = {
 export default function TabFourScreen() {
   const router = useRouter();
   const t = useAppTheme();
+  const colorScheme = (useColorScheme?.() ?? 'light') as 'light' | 'dark';
 
   const [leagueName, setLeagueName] = useState('');
   const [game, setGame] = useState('');
   const [gameType, setGameType] = useState<GameType | ''>('');
+  const [tournamentType, setTournamentType] = useState<'league' | 'knockout' | 'round_robin' | ''>('');
+  const [maxParticipants, setMaxParticipants] = useState<string>('');
+  const [pointsPerWin, setPointsPerWin] = useState<string>('3');
+  const [pointsPerDraw, setPointsPerDraw] = useState<string>('1');
+  const [pointsPerLoss, setPointsPerLoss] = useState<string>('0');
   const [uid, setUid] = useState<string | null>(auth.currentUser?.uid ?? null);
   const [loadingLeagues, setLoadingLeagues] = useState(true);
   const [myLeagues, setMyLeagues] = useState<League[]>([]);
@@ -63,7 +67,7 @@ export default function TabFourScreen() {
       leagueUnsubsRef.current = {};
     };
 
-    // If user is not signed in, clean up and exit without error
+    // If user is not signed in, clean up and exit without generating an error
     if (!uid) {
       cleanupAllLeagueListeners();
       setMyLeagues([]);
@@ -83,7 +87,7 @@ export default function TabFourScreen() {
     const unsubscribeMemberships = onSnapshot(
       qy,
       (snap) => {
-        // Get all league IDs the user is a member of
+        // gathers all the league IDs the user is a member of
         const leagueIds = snap.docs.map((d) => d.data().leagueId as string);
 
         // If user has no leagues, clean up and exit
@@ -94,8 +98,8 @@ export default function TabFourScreen() {
           return;
         }
 
-        // Remove Listeners for Leagues User Left
-        // If a league ID is in my listeners but not in the current memberships,
+        // Remove Listeners for Leagues that the user left
+        // if a league ID is in my listeners but not in the current memberships,
         // the user left that league. I need to stop listening to it.
         Object.keys(leagueUnsubsRef.current).forEach((id) => {
           if (!leagueIds.includes(id)) {
@@ -108,7 +112,7 @@ export default function TabFourScreen() {
         // For each league the user is a member of, set up a real-time listener.
         // This listener will fire whenever the league data changes.
         leagueIds.forEach((id) => {
-          // If I'm already listening to this league, skip it
+          // if I'm already listening to this league, move on
           if (leagueUnsubsRef.current[id]) return;
 
           // onDocSnapshot() listens for changes to a single document.
@@ -121,7 +125,7 @@ export default function TabFourScreen() {
               return;
             }
 
-            // Get league data
+            // Get the league data
             const data = ld.data() as any;
             const updated = { 
               id: ld.id, 
@@ -132,7 +136,7 @@ export default function TabFourScreen() {
             } as League;
 
             // Update League in State
-            // this either merges or replaces the league in my state array.
+            // this either merges or replaces the league in the state array.
             // If it's new, I add it. If it exists, I update it.
             setMyLeagues((prev) => {
               const i = prev.findIndex((L) => L.id === id);
@@ -150,7 +154,7 @@ export default function TabFourScreen() {
             setLoadingLeagues(false);
           });
 
-          // Store the unsubscribe function so I can clean it up later
+          // store the unsubscribe function so I can clean it up later
           leagueUnsubsRef.current[id] = unsub;
         });
       },
@@ -162,14 +166,14 @@ export default function TabFourScreen() {
     // When the component unmounts or the effect re-runs, it needs to:
     // 1. Stop listening to memberships
     // 2. Stop listening to all leagues
-    // This prevents memory leaks.
+    // This prevents memory leaks
     return () => {
       unsubscribeMemberships();
       cleanupAllLeagueListeners();
     };
   }, [uid]); // Re-run when user ID changes
 
-  // Load progress for a specific league
+  // load progress for a specific league
   const loadLeagueProgress = async (leagueId: string, userId: string) => {
     if (loadingProgress[leagueId]) return; // Already loading
     
@@ -201,8 +205,8 @@ export default function TabFourScreen() {
     }
 
     try {
-      // Create new league document in Firestore
-      // addDoc() automatically generates a unique document ID to identufy different leagues
+      // Create new league doc in Firestore
+      // addDoc() automatically generates a unique docID to identufy different leagues
       const leagueRef = await addDoc(collection(db, 'leagues'), {
         name: leagueName.trim(),
         game: game.trim() || null,
@@ -212,14 +216,14 @@ export default function TabFourScreen() {
         updatedAt: serverTimestamp(),
       });
 
-      // Get user profile for display name
+      // get user profile for display name
       const userRef = doc(db, 'users', uid);
       const userSnap = await getDoc(userRef);
       const userData = userSnap.exists() ? userSnap.data() : null;
       const displayName = userData?.displayName || userData?.username || auth.currentUser?.email?.split('@')[0] || 'Player';
       const username = userData?.username || null;
 
-      // Add creator as a member of the league
+      // add creator as a member of their league
       const memberId = `${leagueRef.id}_${uid}`;
       const memberRef = doc(db, 'leagueMembers', memberId);
       await setDoc(memberRef, {
@@ -238,8 +242,13 @@ export default function TabFourScreen() {
       setLeagueName('');
       setGame('');
       setGameType('');
+      setTournamentType('');
+      setMaxParticipants('');
+      setPointsPerWin('3');
+      setPointsPerDraw('1');
+      setPointsPerLoss('0');
 
-      // Navigate to the new league's detail page
+      // Navigates the user to the new league's detail page
       router.push({
         pathname: '/league/[leagueId]',
         params: { leagueId: leagueRef.id },
@@ -264,18 +273,18 @@ export default function TabFourScreen() {
 
         <AppCard style={{ marginBottom: t.spacing.lg }}>
           <Text style={{ fontSize: 20, fontWeight: '900', letterSpacing: 0.3 }}>
-            Create a league
+            Create a tournament
           </Text>
           <Text style={{ marginTop: 6, color: t.colors.mutedText, fontWeight: '600' }}>
-            Keep it simple — you can edit tournament settings later.
+            Choose your tournament format and customize the settings.
           </Text>
 
           <RNView style={{ marginTop: t.spacing.lg, gap: t.spacing.md }}>
             <AppInput
-              label="League name"
+              label="Tournament name"
               value={leagueName}
               onChangeText={setLeagueName}
-              placeholder="League name"
+              placeholder="Premier League, Champions Cup, etc."
               autoCapitalize="words"
             />
             <AppInput
@@ -286,9 +295,46 @@ export default function TabFourScreen() {
               autoCapitalize="words"
             />
 
+            {/* Tournament Type Selection */}
             <RNView>
               <Text style={{ fontSize: 14, fontWeight: '800', marginBottom: 10, color: textColor, letterSpacing: 0.2 }}>
-                Game type
+                Tournament type *
+              </Text>
+              <RNView style={{ gap: 10 }}>
+                {[
+                  { id: 'league', name: '🏆 League', desc: 'Points-based (like Premier League). Everyone plays everyone, points determine standings.' },
+                  { id: 'knockout', name: '🥊 Knockout', desc: 'Single elimination bracket. Lose once and you\'re out. Perfect for tournaments.' },
+                  { id: 'round_robin', name: '🔄 Round Robin', desc: 'Everyone plays everyone once. Points-based standings, no elimination.' },
+                ].map((type) => {
+                  const selected = tournamentType === type.id;
+                  return (
+                    <TouchableOpacity
+                      key={type.id}
+                      onPress={() => setTournamentType(selected ? '' : type.id as any)}
+                      style={{
+                        padding: 14,
+                        borderRadius: 12,
+                        borderWidth: 2,
+                        borderColor: selected ? tint : t.colors.borderStrong,
+                        backgroundColor: selected ? (colorScheme === 'dark' ? tint + '20' : tint + '10') : t.colors.card,
+                      }}
+                    >
+                      <Text style={{ fontWeight: '800', fontSize: 16, color: selected ? tint : textColor }}>
+                        {type.name}
+                      </Text>
+                      <Text style={{ fontSize: 12, marginTop: 4, color: t.colors.mutedText, fontWeight: '600' }}>
+                        {type.desc}
+                      </Text>
+                    </TouchableOpacity>
+                  );
+                })}
+              </RNView>
+            </RNView>
+
+            {/* Game Type Selection */}
+            <RNView>
+              <Text style={{ fontSize: 14, fontWeight: '800', marginBottom: 10, color: textColor, letterSpacing: 0.2 }}>
+                Game type (optional)
               </Text>
               <ScrollView horizontal showsHorizontalScrollIndicator={false}>
                 <RNView style={{ flexDirection: 'row', gap: 10, paddingBottom: 2 }}>
@@ -322,7 +368,103 @@ export default function TabFourScreen() {
               ) : null}
             </RNView>
 
-            <AppButton title="Create league" onPress={handleCreateLeague} />
+            {/* Tournament-Specific Settings */}
+            {tournamentType && (
+              <RNView style={{ padding: 14, borderRadius: 12, backgroundColor: colorScheme === 'dark' ? '#1C1C1E' : '#F9F9F9', gap: 12 }}>
+                <Text style={{ fontSize: 14, fontWeight: '800', color: textColor }}>
+                  {tournamentType === 'league' ? '🏆 League Settings' : tournamentType === 'knockout' ? '🥊 Knockout Settings' : '🔄 Round Robin Settings'}
+                </Text>
+
+                {/* Max Participants */}
+                <AppInput
+                  label="Max participants (optional)"
+                  value={maxParticipants}
+                  onChangeText={setMaxParticipants}
+                  placeholder={tournamentType === 'knockout' ? '8, 16, 32...' : 'Any number'}
+                  keyboardType="numeric"
+                />
+
+                {/* Points System (for League and Round Robin) */}
+                {(tournamentType === 'league' || tournamentType === 'round_robin') && (
+                  <RNView style={{ gap: 10 }}>
+                    <Text style={{ fontSize: 13, fontWeight: '700', color: textColor }}>
+                      Points system
+                    </Text>
+                    <RNView style={{ flexDirection: 'row', gap: 8 }}>
+                      <RNView style={{ flex: 1 }}>
+                        <Text style={{ fontSize: 11, fontWeight: '700', color: t.colors.mutedText, marginBottom: 4 }}>Win</Text>
+                        <TextInput
+                          value={pointsPerWin}
+                          onChangeText={setPointsPerWin}
+                          keyboardType="numeric"
+                          style={{
+                            padding: 10,
+                            borderRadius: 8,
+                            borderWidth: 2,
+                            borderColor: borderColor,
+                            backgroundColor: cardBg,
+                            color: textColor,
+                            fontSize: 14,
+                            fontWeight: '700',
+                            textAlign: 'center',
+                          }}
+                        />
+                      </RNView>
+                      <RNView style={{ flex: 1 }}>
+                        <Text style={{ fontSize: 11, fontWeight: '700', color: t.colors.mutedText, marginBottom: 4 }}>Draw</Text>
+                        <TextInput
+                          value={pointsPerDraw}
+                          onChangeText={setPointsPerDraw}
+                          keyboardType="numeric"
+                          style={{
+                            padding: 10,
+                            borderRadius: 8,
+                            borderWidth: 2,
+                            borderColor: borderColor,
+                            backgroundColor: cardBg,
+                            color: textColor,
+                            fontSize: 14,
+                            fontWeight: '700',
+                            textAlign: 'center',
+                          }}
+                        />
+                      </RNView>
+                      <RNView style={{ flex: 1 }}>
+                        <Text style={{ fontSize: 11, fontWeight: '700', color: t.colors.mutedText, marginBottom: 4 }}>Loss</Text>
+                        <TextInput
+                          value={pointsPerLoss}
+                          onChangeText={setPointsPerLoss}
+                          keyboardType="numeric"
+                          style={{
+                            padding: 10,
+                            borderRadius: 8,
+                            borderWidth: 2,
+                            borderColor: borderColor,
+                            backgroundColor: cardBg,
+                            color: textColor,
+                            fontSize: 14,
+                            fontWeight: '700',
+                            textAlign: 'center',
+                          }}
+                        />
+                      </RNView>
+                    </RNView>
+                    <Text style={{ fontSize: 11, color: t.colors.mutedText, fontStyle: 'italic' }}>
+                      Default: 3 points for win, 1 for draw, 0 for loss
+                    </Text>
+                  </RNView>
+                )}
+
+                {/* Knockout-specific info */}
+                {tournamentType === 'knockout' && (
+                  <Text style={{ fontSize: 12, color: t.colors.mutedText, fontWeight: '600' }}>
+                    💡 Tip: Choose a max participants count that's a power of 2 (8, 16, 32) for a clean bracket.
+                  </Text>
+                )}
+              </RNView>
+            )}
+
+            <AppButton title="Create tournament" onPress={handleCreateLeague} />
           </RNView>
         </AppCard>
 

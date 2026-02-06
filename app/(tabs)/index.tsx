@@ -1,33 +1,43 @@
 // Sign Out Tab Screen
 // I handle user sign out and navigation back to login.
 /* Sign out functionality (lines 31-61) from Firebase Auth - https://firebase.google.com/docs/reference/js/auth#signout */
+// Ref: React useState - https://www.w3schools.com/react/react_usestate.asp
 
 import { useRouter } from 'expo-router';
 import { signOut as firebaseSignOut } from 'firebase/auth';
-import { ScrollView, StyleSheet, Text, TouchableOpacity, View } from 'react-native';
+import { Alert, ScrollView, StyleSheet, Text, View } from 'react-native';
 import { auth } from '../../FirebaseConfig';
 import Logo from '../../components/Logo';
 import React from 'react';
+import { AppButton, AppCard, useAppTheme } from '../../components/ui';
 
 export default function TabOneScreen() {
   const router = useRouter();
+  const t = useAppTheme();
   const [isSigningOut, setIsSigningOut] = React.useState(false);
 
   const handleSignOut = async () => {
     if (isSigningOut) {
       return;
     }
-    
-    setIsSigningOut(true);
-    
-    try {
-      router.replace('/');
-      await new Promise(resolve => setTimeout(resolve, 200));
-      await firebaseSignOut(auth);
-    } catch (error: any) {
-      setIsSigningOut(false);
-      alert('Sign out failed: ' + (error?.message || 'Unknown error'));
-    }
+
+    Alert.alert('Sign out?', 'I will sign you out of this device.', [
+      { text: 'Cancel', style: 'cancel' },
+      {
+        text: 'Sign out',
+        style: 'destructive',
+        onPress: async () => {
+          setIsSigningOut(true);
+          try {
+            await firebaseSignOut(auth);
+            router.replace('/');
+          } catch (error: any) {
+            setIsSigningOut(false);
+            alert('Sign out failed: ' + (error?.message || 'Unknown error'));
+          }
+        },
+      },
+    ]);
   };
 
   return (
@@ -35,7 +45,7 @@ export default function TabOneScreen() {
       contentContainerStyle={styles.scrollContent}
       showsVerticalScrollIndicator={false}
     >
-      <View style={styles.container}>
+      <View style={[styles.container, { backgroundColor: t.colors.background }]}>
         <View style={styles.logoSection}>
           <Logo size="large" showTagline={true} />
         </View>
@@ -43,16 +53,20 @@ export default function TabOneScreen() {
         <View style={styles.contentSection}>
           <Text style={styles.title}>Account</Text>
           <Text style={styles.subtitle}>Sign out to switch accounts</Text>
-          
-          <TouchableOpacity 
-            style={[styles.button, isSigningOut && styles.buttonDisabled]} 
-            onPress={handleSignOut}
-            disabled={isSigningOut}
-          >
-            <Text style={styles.text}>
-              {isSigningOut ? 'Signing Out...' : 'Sign Out'}
+
+          <AppCard style={{ width: '100%', maxWidth: 420, marginTop: 6 }}>
+            <Text style={{ fontWeight: '800' }}>Signed in as</Text>
+            <Text style={{ marginTop: 6, color: t.colors.mutedText, fontWeight: '700' }}>
+              {auth.currentUser?.email ?? 'Unknown'}
             </Text>
-          </TouchableOpacity>
+            <AppButton
+              title={isSigningOut ? 'Signing out…' : 'Sign out'}
+              variant="danger"
+              onPress={handleSignOut}
+              disabled={isSigningOut}
+              style={{ marginTop: 16 }}
+            />
+          </AppCard>
         </View>
       </View>
     </ScrollView>
@@ -97,29 +111,4 @@ const styles = StyleSheet.create({
     fontWeight: '500',
     textAlign: 'center',
   },
-  button: {
-    width: '100%',
-    maxWidth: 400,
-    backgroundColor: '#DC143C',
-    padding: 20,
-    borderRadius: 12,
-    alignItems: 'center',
-    justifyContent: 'center',
-    shadowColor: '#DC143C',
-    shadowOffset: { width: 0, height: 4 },
-    shadowOpacity: 0.3,
-    shadowRadius: 8,
-    elevation: 5,
-    borderWidth: 2,
-    borderColor: '#000000',
-  },
-  buttonDisabled: {
-    opacity: 0.7,
-  },
-  text: {
-    color: '#FFFFFF',
-    fontSize: 18,
-    fontWeight: '700',
-    letterSpacing: 0.5,
-  }
 });

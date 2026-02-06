@@ -1,8 +1,5 @@
-// Edit League Screen
-// I allow league owners to edit league settings and tournament details.
-/* Form handling code (lines 63-104, 106-173) uses React Native components - https://reactnative.dev/docs/textinput */
-/* KeyboardAvoidingView from React Native - https://reactnative.dev/docs/keyboardavoidingview */
-/* League update code uses Firestore updateDoc - https://firebase.google.com/docs/firestore/manage-data/add-data#update-data */
+// I let league owners edit league settings and tournament details; I use KeyboardAvoidingView and Firestore updateDoc.
+// Ref: KeyboardAvoidingView - https://reactnative.dev/docs/keyboardavoidingview
 import React, { useEffect, useState } from 'react';
 import {
   Alert,
@@ -37,7 +34,7 @@ export default function EditLeagueScreen() {
   const palette = Colors[scheme];
   const tint = palette.tint;
 
-  // I set fallback colours if the palette doesn't provide them
+  // I set fallback colours incase palette doesn't provide them
   const cardBg = palette.card ?? (scheme === 'dark' ? '#16181A' : '#FFFFFF');
   const borderColor = palette.border ?? (scheme === 'dark' ? '#2A2D2F' : '#E6E6E6');
   const textColor = palette.text ?? '#1F1F1F';

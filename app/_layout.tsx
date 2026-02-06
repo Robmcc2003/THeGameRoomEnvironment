@@ -58,7 +58,7 @@ export default function RootLayout() {
   return <RootLayoutNav />;
 }
 
-// I handle routing and authentication state.
+// handle routing and authentication state.
 // Reference: https://firebase.google.com/docs/auth/web/manage-users#get_the_currently_signed-in_user
 function RootLayoutNav() {
   const colorScheme = useColorScheme();
@@ -68,23 +68,41 @@ function RootLayoutNav() {
   const [user, setUser] = useState(auth.currentUser);
 
   useEffect(() => {
+    // I only subscribe once so I do not create navigation loops.
     const unsubscribe = onAuthStateChanged(auth, (currentUser) => {
       setUser(currentUser);
-      
-      const inTabs = segments[0] === '(tabs)';
-      const onLoginScreen = !inTabs && (pathname === '/' || pathname === '/index' || !pathname);
-      
-      if (currentUser && onLoginScreen) {
-        router.replace('/(tabs)');
-      } else if (!currentUser && inTabs) {
-        setTimeout(() => {
-          router.replace('/');
-        }, 100);
-      }
     });
 
     return () => unsubscribe();
-  }, [segments, router, pathname]);
+  }, []);
+
+  useEffect(() => {
+    // I keep routing logic separate from the auth subscription.
+    const inTabs = segments[0] === '(tabs)';
+    const onVerifyScreen = pathname === '/verify-email';
+    const onLoginScreen = !inTabs && (pathname === '/' || pathname === '/index' || !pathname);
+
+    // Not signed in -> always go to login if currently in tabs or verify screen.
+    if (!user) {
+      if (inTabs || onVerifyScreen) {
+        router.replace('/');
+      }
+      return;
+    }
+
+    // Signed in but not verified -> keep on verify screen.
+    if (!user.emailVerified) {
+      if (!onVerifyScreen) {
+        router.replace('/verify-email');
+      }
+      return;
+    }
+
+    // Signed in and verified -> keep inside the main app.
+    if (onLoginScreen || onVerifyScreen) {
+      router.replace('/(tabs)');
+    }
+  }, [user?.uid, user?.emailVerified, segments, pathname, router]);
 
   // I register notification permissions and listen for new in-app notifications.
   useEffect(() => {
@@ -116,9 +134,6 @@ function RootLayoutNav() {
     };
   }, [user?.uid]);
   
-  const inTabs = segments[0] === '(tabs)';
-  const shouldShowTabs = user || !inTabs;
-
   return (
     <ThemeProvider value={colorScheme === 'dark' ? DarkTheme : DefaultTheme}>
       <Stack
@@ -128,9 +143,7 @@ function RootLayoutNav() {
         }}
       >
         <Stack.Screen name="index" options={{ headerShown: false }} />
-        {shouldShowTabs && (
-          <Stack.Screen name="(tabs)" options={{ headerShown: false }} />
-        )}
+        <Stack.Screen name="(tabs)" options={{ headerShown: false }} />
         <Stack.Screen name="league" options={{ headerShown: false }} />
       </Stack>
     </ThemeProvider>

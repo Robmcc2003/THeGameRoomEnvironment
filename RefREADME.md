@@ -1,13 +1,8 @@
-# The Game Room Environment
+# The Game Room Environment — References
+This document lists **all references, attributions, and documentation links** used in the project. For a short project overview and how to run the app, see [README.md](./README.md).
 
+## Project summary
 A React Native mobile app for managing tournament leagues, brackets, and player statistics.
-
-## Tech Stack
-- React Native
-- Expo
-- Firebase (Authentication, Firestore)
-- TypeScript
-- Expo Router
 
 ## Key Files
 ### `app/_layout.tsx`
@@ -76,7 +71,6 @@ League member management, invites, and role assignments.
 - **System Admins**: Verify scores in any league
 
 ## Refs
-
 ### Firebase Configuration
 - **Source**: YouTube Tutorial (2022)
 - **URL**: https://youtu.be/a0KJ7l5sNGw?si=caznuBD8jCD2er9v
@@ -177,13 +171,13 @@ League member management, invites, and role assignments.
 - **Description**: Bracket generation algorithm. Adapted to handle byes and create placeholder matches for subsequent rounds
 
 ### Bracket Visualisation
-- **Source**: GPT Conversation
+- **Source**: GPT Convo
 - **URL**: https://chatgpt.com/share/691dab97-d050-8007-9ba3-69de17a2cc4c
 - **Location**: `app/league/[leagueId]/bracket.tsx` (lines 3, throughout bracket rendering)
 - **Description**: Bracket visualisation styling and layout
 
 ### React Native Components
-- **source**: React Native Documentation
+- **Source**: React Native Documentation
 - **URL**: https://reactnative.dev/docs/scrollview
 - **Location**: `app/league/[leagueId]/bracket.tsx` (lines 4, ScrollView usage)
 - **Description**: ScrollView and Dimensions API usage
@@ -198,7 +192,7 @@ League member management, invites, and role assignments.
 - **Location**: `app/(tabs)/three.tsx` (throughout)
 - **Description**: RefreshControl for pull-to-refresh functionality
 
-- **source**: React Native Documentation
+- **Source**: React Native Documentation
 - **URL**: https://reactnative.dev/docs/keyboardavoidingview
 - **Location**: `app/league/editleague.tsx` (lines 10, throughout)
 - **Description**: KeyboardAvoidingView for handling keyboard interactions
@@ -209,20 +203,59 @@ League member management, invites, and role assignments.
 - **Location**: `app/_layout.tsx` (line 8), `app/(tabs)/_layout.tsx` (line 4)
 - **Description**: FontAwesome icon library from Expo Vector
 
+### JavaScript and TypeScript
+- **Source**: W3Schools JavaScript Async/Await
+- **URL**: https://www.w3schools.com/js/js_async.asp
+- **Location**: `app/index.tsx`, `components/lib/tournaments.ts`, `components/lib/members.ts` (async/await usage)
+- **Description**: Async/await pattern for sign-in, Firestore operations, and data loading
+
+- **Source**: W3Schools JavaScript Array filter()
+- **URL**: https://www.w3schools.com/jsref/jsref_filter.asp
+- **Location**: `app/(tabs)/three.tsx`, `app/notifications.tsx`, `components/lib/badges.ts` (filtering lists)
+- **Description**: Array filter for filtering results and lists
+
+- **Source**: W3Schools JavaScript Date toLocaleDateString()
+- **URL**: https://www.w3schools.com/jsref/jsref_tolocaledatestring.asp
+- **Location**: `app/(tabs)/three.tsx` (formatDate), `app/league/[leagueId]/bracket.tsx`, `app/user/[userId].tsx`
+- **Description**: Date formatting for tournament history and match dates
+
+- **Source**: W3Schools React useState Hook
+- **URL**: https://www.w3schools.com/react/react_usestate.asp
+- **Location**: Throughout app and tab screens (e.g. `app/(tabs)/index.tsx`, `app/league/[leagueId]/chat.tsx`)
+- **Description**: State management with useState in React components
+
+### League chat, badges, and email verification
+- **Source**: Firestore Documentation
+- **URL**: https://firebase.google.com/docs/firestore
+- **Location**: `components/lib/chat.ts`, `app/league/[leagueId]/chat.tsx`
+- **Description**: League chat messages stored in Firestore subcollection `leagueChats/{leagueId}/messages`
+
+- **Source**: GPT Conversation
+- **URL**: https://chatgpt.com/share/698628e4-3c08-8007-a920-17997d00bfde
+- **Location**: `app/league/[leagueId]/chat.tsx` (throughout)
+- **Description**: League chat UI layout and behaviour
+
+- **Source**: Firestore Documentation
+- **URL**: https://firebase.google.com/docs/firestore
+- **Location**: `components/lib/badges.ts`, `components/ui/AchievementBadgeTile.tsx`
+- **Description**: Badge definitions and earned badges stored in Firestore
+
+- **Source**: GPT Conversation
+- **URL**: https://chatgpt.com/share/69862ad5-9300-8007-9d95-100d9c6fc6b9
+- **Location**: `components/ui/AchievementBadgeTile.tsx`, `components/lib/badges.ts` (badge UI)
+- **Description**: Badge UI generation and layout
+
+- **Source**: Firebase Auth Documentation
+- **URL**: https://firebase.google.com/docs/auth
+- **Location**: `app/verify-email.tsx`, `app/index.tsx`
+- **Description**: Email verification using `sendEmailVerification` and `emailVerified`
+
 ## Dev Setup
 ### Prerequisites
 - Node.js
 - Expo
 - Firebase
 
-### Installation
-```bash
-npm install
-```
-### Running
-```bash
-npx expo start
-```
 ### Firebase Setup
 1. Create Firebase project
 2. Enable Authentication (Email/Password)

@@ -1,13 +1,11 @@
-// Tab Navigation Layout It 3
-// Defines the bottom tab bar with 4 tabs: Sign Out, Home, My Badges, My Leagues
-
+// I define the bottom tab bar with four tabs: Sign Out, Home, Profile, and My Leagues.
 import FontAwesome from '@expo/vector-icons/FontAwesome';
 import { Tabs } from 'expo-router';
 import React from 'react';
 import { useColorScheme } from '../../components/useColorScheme';
 import Colors from '../../constants/Colors';
 
-// Component to render tab bar icons
+// I render a single tab bar icon using FontAwesome.
 function TabBarIcon(props: {
   name: React.ComponentProps<typeof FontAwesome>['name'];
   color: string;
@@ -15,15 +13,15 @@ function TabBarIcon(props: {
   return <FontAwesome size={28} style={{ marginBottom: -3 }} {...props} />;
 }
 
-// Main tab layout component
+// I render the main tab layout and wire up each tab screen.
 export default function TabLayout() {
-  const colorScheme = useColorScheme(); // Get device color scheme
+  const colorScheme = useColorScheme();
 
   return (
     <Tabs
       screenOptions={{
-        tabBarActiveTintColor: Colors[colorScheme ?? 'light'].tint, // Red colour for active tab
-        headerShown: false, // Hide header on all tab screens
+        tabBarActiveTintColor: Colors[colorScheme ?? 'light'].tint,
+        headerShown: false,
       }}>
       {/* Tab 1: Sign Out screen */}
       <Tabs.Screen

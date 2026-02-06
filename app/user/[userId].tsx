@@ -1,5 +1,5 @@
-// Public User Profile Screen
-// I allow players to view each other's stats and tournament history.
+// I display a public user profile: stats, tournament history, and earned badges.
+// Ref: Date toLocaleDateString - https://www.w3schools.com/jsref/jsref_tolocaledatestring.asp
 import { Stack, useLocalSearchParams, useRouter } from 'expo-router';
 import React, { useCallback, useEffect, useMemo, useState } from 'react';
 import { ActivityIndicator, FlatList, RefreshControl, SafeAreaView, ScrollView, TouchableOpacity, View as RNView } from 'react-native';
@@ -7,7 +7,8 @@ import Logo from '../../components/Logo';
 import { Text } from '../../components/Themed';
 import { getPublicUserSummary } from '../../components/lib/users';
 import { getUserGameSpecificStats, getUserOverallStats, getUserTournamentHistory } from '../../components/lib/tournaments';
-import { AppBadge, AppCard, useAppTheme } from '../../components/ui';
+import { AppBadge, AppCard, AchievementBadgeTile, useAppTheme } from '../../components/ui';
+import { BADGES, getUserEarnedBadges } from '../../components/lib/badges';
 
 type TournamentHistoryItem = {
   leagueId: string;
@@ -35,6 +36,7 @@ export default function PublicUserProfileScreen() {
   const [stats, setStats] = useState<any | null>(null);
   const [history, setHistory] = useState<TournamentHistoryItem[]>([]);
   const [shooterStats, setShooterStats] = useState<Record<string, number>>({});
+  const [earnedBadges, setEarnedBadges] = useState<Record<string, any>>({});
 
   const load = useCallback(async () => {
     if (!id) {
@@ -44,17 +46,19 @@ export default function PublicUserProfileScreen() {
     }
 
     try {
-      const [summary, overall, hist, cod] = await Promise.all([
+      const [summary, overall, hist, cod, badges] = await Promise.all([
         getPublicUserSummary(id),
         getUserOverallStats(id),
         getUserTournamentHistory(id),
         getUserGameSpecificStats(id, 'CALL_OF_DUTY'),
+        getUserEarnedBadges(id),
       ]);
 
       setProfile(summary ? { displayName: summary.displayName, username: summary.username } : null);
       setStats(overall);
       setHistory(hist as any);
       setShooterStats(cod || {});
+      setEarnedBadges(badges || {});
     } catch (e) {
     } finally {
       setLoading(false);
@@ -157,6 +161,46 @@ export default function PublicUserProfileScreen() {
                   </RNView>
                 </AppCard>
               ) : null}
+
+              <AppCard>
+                <RNView style={{ flexDirection: 'row', alignItems: 'center', justifyContent: 'space-between' }}>
+                  <Text style={{ fontSize: 20, fontWeight: '900' }}>Badges</Text>
+                  <AppBadge text={`${Object.keys(earnedBadges || {}).length}/${BADGES.length}`} tone="tint" />
+                </RNView>
+                <Text style={{ marginTop: 8, color: t.colors.mutedText, fontWeight: '600' }}>
+                  Earned from verified matches and tournaments.
+                </Text>
+
+                {(['tournament', 'shooter', 'general'] as const).map((cat) => {
+                  const items = BADGES.filter(b => b.category === cat);
+                  const title =
+                    cat === 'tournament' ? 'Tournament' : cat === 'shooter' ? 'Shooter' : 'General';
+                  return (
+                    <RNView key={cat} style={{ marginTop: 16 }}>
+                      <RNView style={{ flexDirection: 'row', alignItems: 'center', justifyContent: 'space-between' }}>
+                        <Text style={{ fontSize: 16, fontWeight: '900' }}>{title}</Text>
+                        <Text style={{ color: t.colors.mutedText, fontWeight: '700' }}>
+                          {items.filter(b => !!earnedBadges?.[b.id]).length}/{items.length}
+                        </Text>
+                      </RNView>
+
+                      <RNView style={{ flexDirection: 'row', flexWrap: 'wrap', justifyContent: 'space-between', marginTop: 16, gap: 16 }}>
+                        {items.map((b) => (
+                          <AchievementBadgeTile
+                            key={b.id}
+                            title={b.title}
+                            description={b.description}
+                            subtitle={earnedBadges?.[b.id] ? undefined : 'Locked'}
+                            icon={b.icon as any}
+                            rarity={b.rarity}
+                            locked={!earnedBadges?.[b.id]}
+                          />
+                        ))}
+                      </RNView>
+                    </RNView>
+                  );
+                })}
+              </AppCard>
 
               {Object.keys(shooterStats).length > 0 ? (
                 <AppCard>

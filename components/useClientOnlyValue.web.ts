@@ -1,7 +1,6 @@
 import React from 'react';
 
-// `useEffect` is not invoked during server rendering, meaning
-// we can use this to determine if were on the server or not.
+// I defer to the client value after mount so we can tell server from client (useEffect does not run on the server).
 export function useClientOnlyValue<S, C>(server: S, client: C): S | C {
   const [value, setValue] = React.useState<S | C>(server);
   React.useEffect(() => {

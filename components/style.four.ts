@@ -1,13 +1,12 @@
+// I define shared styles for the My Leagues tab (tab four) screen layout.
 import { StyleSheet } from 'react-native';
 
 export const styles = StyleSheet.create({
-  // Ensures content sits safely within screen bounds
   safeArea: {
     flex: 1,
     backgroundColor: '#FFFFFF',
   },
 
-  // Main container inside ScrollView
   container: {
     flexGrow: 1,
     paddingHorizontal: 20,
@@ -16,7 +15,6 @@ export const styles = StyleSheet.create({
     backgroundColor: '#FFFFFF',
   },
 
-  // Logo section
   logoSection: {
     paddingTop: 20,
     paddingBottom: 15,
@@ -25,7 +23,6 @@ export const styles = StyleSheet.create({
     borderBottomColor: '#000000',
     marginBottom: 24,
   },
-  // Page title at top
   mainTitle: {
     fontSize: 30,
     fontWeight: '900',

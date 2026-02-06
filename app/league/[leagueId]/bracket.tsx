@@ -1,8 +1,5 @@
-// Tournament Bracket Screen
-// I display tournament brackets and standings with two view modes: standings and bracket visualisation.
-/* Bracket visualisation styling (throughout bracket rendering) adapted from ChatGPT conversation - https://chatgpt.com/share/691dab97-d050-8007-9ba3-69de17a2cc4c */
-/* ScrollView and Dimensions (lines 9, throughout) from React Native docs - https://reactnative.dev/docs/scrollview */
-
+// I display the tournament bracket and standings; I support score entry and admin verification. Bracket styling ref: https://chatgpt.com/share/691dab97-d050-8007-9ba3-69de17a2cc4c
+// Ref: Date toLocaleDateString - https://www.w3schools.com/jsref/jsref_tolocaledatestring.asp
 import { useLocalSearchParams, useRouter } from 'expo-router';
 import { Stack } from 'expo-router/stack';
 import React, { useCallback, useEffect, useMemo, useState } from 'react';
@@ -59,20 +56,20 @@ export default function TournamentBracketScreen() {
 
   const uid = auth.currentUser?.uid ?? null;
 
-  // I calculate the user's position in the standings
+  // calculate the user's position in the standings
   const userPosition = useMemo(() => {
     if (!uid || standings.length === 0) return null;
     const index = standings.findIndex(s => s.userId === uid);
     return index >= 0 ? index + 1 : null;
   }, [uid, standings]);
 
-  // I get the user's statistics from the standings
+  // get the user's statistics from the standings
   const userStats = useMemo(() => {
     if (!uid || standings.length === 0) return null;
     return standings.find(s => s.userId === uid) || null;
   }, [uid, standings]);
 
-  // I filter matches to show only the current user's matches
+  // filter matches to show only the current user's matches
   const userMatches = useMemo(() => {
     if (!uid || !bracket) return [];
     return bracket.matches.filter(
@@ -80,7 +77,7 @@ export default function TournamentBracketScreen() {
     );
   }, [uid, bracket]);
 
-  // I load league data and check if the user has admin permissions
+  // load league data and check if the user has admin permissions
   const loadLeague = useCallback(async () => {
     if (!leagueId) { setLoading(false); return; }
     try {
@@ -94,7 +91,7 @@ export default function TournamentBracketScreen() {
       const leagueData = snap.data() as LeagueDoc;
       setLeague(leagueData);
       
-      // I check if the user is an owner, league admin, or system admin
+      // check if the user is an owner, league admin, or system admin
       if (uid) {
         const isOwner = leagueData.ownerId === uid;
         const isLeagueAdmin = Array.isArray((leagueData as any).admins) && (leagueData as any).admins.includes(uid);
@@ -111,7 +108,7 @@ export default function TournamentBracketScreen() {
     }
   }, [leagueId, router, uid]);
 
-  // I load all active members and create a map for quick name lookups
+  // load all active members and create a map for quick name lookups
   const loadMembers = useCallback(async () => {
     if (!leagueId) return;
     try {
@@ -134,7 +131,7 @@ export default function TournamentBracketScreen() {
     }
   }, [leagueId]);
 
-  // I load the bracket and standings, auto-generating brackets if needed
+  // I load the bracket and standings, auto-generating brackets if needs be
   const loadBracket = useCallback(async () => {
     if (!leagueId) { setLoading(false); setRefreshing(false); return; }
     try {
@@ -171,11 +168,11 @@ export default function TournamentBracketScreen() {
     Promise.all([loadLeague(), loadBracket()]).finally(() => setRefreshing(false));
   };
 
-  // Handle opening score entry modal
+  // Handle opening score entry 
   const openScoreModal = (match: Match) => {
     setSelectedMatch(match);
     
-    // I determine if we should use game-specific scoring based on league gameType
+    // determing if we should use game-specific scoring based on league gameType
     const gameConfig = league ? getGameConfig(league.gameType) : null;
     const shouldUseGameSpecific = gameConfig && gameConfig.id !== 'GENERIC';
     
@@ -185,7 +182,7 @@ export default function TournamentBracketScreen() {
       const p1Scores: Record<string, string> = {};
       const p2Scores: Record<string, string> = {};
       
-      // I populate all fields from the game config, using existing values or empty strings
+      // populating all fields from the game config, using existing values or empty strings
       gameConfig.scoringFields.forEach(field => {
         p1Scores[field.id] = match.result?.player1Scores?.[field.id]?.toString() || '';
         p2Scores[field.id] = match.result?.player2Scores?.[field.id]?.toString() || '';
@@ -196,7 +193,7 @@ export default function TournamentBracketScreen() {
       setPlayer1Score('');
       setPlayer2Score('');
     } else if (shouldUseGameSpecific && gameConfig) {
-      // Game-specific mode but no scores yet - initialize empty fields
+      // Game-specific mode but no scores yet - initialise empty fields
       const p1Scores: Record<string, string> = {};
       const p2Scores: Record<string, string> = {};
       
@@ -224,7 +221,7 @@ export default function TournamentBracketScreen() {
     if (!selectedMatch || !league) return;
     
     const gameConfig = getGameConfig(league.gameType);
-    // I determine if game-specific based on league gameType, not just whether scores exist
+    // I determine if game-specific based on league gameType, not just wetherr scores exist
     const isGameSpecific = gameConfig.id !== 'GENERIC';
     
     if (isGameSpecific) {
@@ -254,7 +251,7 @@ export default function TournamentBracketScreen() {
             p1Scores[field.id] = p1Value;
           }
         }
-        // I don't include optional fields if they're empty - they won't be in the object
+        // I don't include optional fields if they're empty 
         
         // Process player 2 score - only include if it has a value
         if (p2Value) {
@@ -269,7 +266,7 @@ export default function TournamentBracketScreen() {
             p2Scores[field.id] = p2Value;
           }
         }
-        // I don't include optional fields if they're empty - they won't be in the object
+        // I don't include optional fields if they're empty 
       }
       
       try {
@@ -284,7 +281,7 @@ export default function TournamentBracketScreen() {
         setSavingScore(false);
       }
     } else {
-      // Legacy numeric scores
+      // old numeric scores
       const p1Score = parseInt(player1Score, 10);
       const p2Score = parseInt(player2Score, 10);
       

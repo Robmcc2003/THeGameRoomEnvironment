@@ -1,7 +1,5 @@
-// League Detail Screen
-// I display league information, members, and invites. Owners and admins can manage members and settings.
-/* League data fetching (lines 150-163) uses Firestore getDoc - https://firebase.google.com/docs/firestore/query-data/get-data */
-/* FlatList component from React Native - https://reactnative.dev/docs/flatlist */
+// display league detail: info, members, invites. I let owners/admins manage members and settings and navigate to bracket, chat, and edit.
+// Ref: Firestore get data - https://firebase.google.com/docs/firestore/query-data/get-data
 import { useLocalSearchParams, useNavigation, useRouter } from 'expo-router';
 import { Stack } from 'expo-router/stack';
 import { doc, getDoc } from 'firebase/firestore';
@@ -166,7 +164,7 @@ export default function LeagueDetailScreen() {
       const [membersData, invitesData] = await Promise.all([listMembers(leagueId), listInvites(leagueId)]);
       const memberRows: Row[] = (membersData ?? []).map((m: any) => ({ kind: 'member', ...m }));
       const inviteRows: Row[] = (invitesData ?? []).map((i: any) => ({ kind: 'invite', ...i }));
-      // I sort members first, then invites, both alphabetically
+      // sort members first, then invites, both alphabetically
       const unified = [...memberRows, ...inviteRows].sort((a, b) => {
         if (a.kind !== b.kind) return a.kind === 'member' ? -1 : 1;
         const aKey = a.kind === 'member' ? (a.displayName ?? a.userId ?? '') : a.emailLower;
@@ -191,19 +189,25 @@ export default function LeagueDetailScreen() {
     Promise.all([loadLeague(), loadList()]).finally(() => setRefreshing(false));
   };
 
-  // I navigate to the add member screen
+  // navigate to the add member screen
   const goToAddMember = useCallback(() => {
     if (!leagueId) return;
     router.push({ pathname: '/league/[leagueId]/add-member', params: { leagueId: String(leagueId) } });
   }, [router, leagueId]);
 
-  // I navigate to the bracket screen
+  // navigate to the bracket screen
   const goToBracket = useCallback(() => {
     if (!leagueId) return;
     router.push({ pathname: '/league/[leagueId]/bracket', params: { leagueId: String(leagueId) } });
   }, [router, leagueId]);
 
-  // I handle joining a tournament and show a success message
+  // Navigate to league chat
+  const goToChat = useCallback(() => {
+    if (!leagueId) return;
+    router.push({ pathname: '/league/[leagueId]/chat', params: { leagueId: String(leagueId) } });
+  }, [router, leagueId]);
+
+  // handle joining a tournament and show a success message when complete
   const onJoinTournament = useCallback(async () => {
     if (!leagueId) return;
     try {
@@ -309,7 +313,7 @@ export default function LeagueDetailScreen() {
     }
   }, [leagueId, router]);
 
-  // I generate a shareable invite link so users can join the tournament from their phone.
+  // allows people to generate a shareable invite link so users can join the tournament from their phone.
   const onShareInviteLink = useCallback(async () => {
     if (!leagueId) return;
     try {
@@ -396,7 +400,7 @@ export default function LeagueDetailScreen() {
     );
   }, [leagueId, router]);
 
-  // I cancel an invite and refresh the list
+  // cancel an invite and refresh the list
   const onCancelInvite = async (emailLower: string) => {
     if (!leagueId) return;
     try {
@@ -643,27 +647,45 @@ export default function LeagueDetailScreen() {
               </TouchableOpacity>
             ) : null}
             {isMember ? (
-              <TouchableOpacity
-                onPress={goToBracket}
-                style={{
-                  flex: 1,
-                  minWidth: 120,
-                  paddingVertical: 12,
-                  paddingHorizontal: 16,
-                  borderRadius: 10,
-                  borderWidth: 2,
-                  borderColor: tint,
-                  backgroundColor: tint,
-                  alignItems: 'center',
-                  shadowColor: tint,
-                  shadowOffset: { width: 0, height: 2 },
-                  shadowOpacity: 0.3,
-                  shadowRadius: 4,
-                  elevation: 3,
-                }}
-              >
-                <Text style={{ color: '#FFFFFF', fontWeight: '700', fontSize: 16 }}>View Bracket</Text>
-              </TouchableOpacity>
+              <>
+                <TouchableOpacity
+                  onPress={goToBracket}
+                  style={{
+                    flex: 1,
+                    minWidth: 120,
+                    paddingVertical: 12,
+                    paddingHorizontal: 16,
+                    borderRadius: 10,
+                    borderWidth: 2,
+                    borderColor: tint,
+                    backgroundColor: tint,
+                    alignItems: 'center',
+                    shadowColor: tint,
+                    shadowOffset: { width: 0, height: 2 },
+                    shadowOpacity: 0.3,
+                    shadowRadius: 4,
+                    elevation: 3,
+                  }}
+                >
+                  <Text style={{ color: '#FFFFFF', fontWeight: '700', fontSize: 16 }}>View Bracket</Text>
+                </TouchableOpacity>
+                <TouchableOpacity
+                  onPress={goToChat}
+                  style={{
+                    flex: 1,
+                    minWidth: 120,
+                    paddingVertical: 12,
+                    paddingHorizontal: 16,
+                    borderRadius: 10,
+                    backgroundColor: colorScheme === 'dark' ? '#2C2C2E' : '#F2F2F7',
+                    borderWidth: 2,
+                    borderColor: tint,
+                    alignItems: 'center',
+                  }}
+                >
+                  <Text style={{ color: tint, fontWeight: '700', fontSize: 16 }}>💬 Chat</Text>
+                </TouchableOpacity>
+              </>
             ) : null}
           </RNView>
 

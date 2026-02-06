@@ -1,3 +1,4 @@
+// I provide user search by username/display name for the find-friends feature and resolve users by email.
 import { db } from '../../FirebaseConfig';
 import {
   collection,

@@ -1,5 +1,4 @@
-// League Layout
-// I configure the navigation stack for league-related screens
+//  set up the Stack for league screens: edit league, league detail, add member, bracket.
 import { Stack } from 'expo-router';
 
 export default function LeagueLayout() {

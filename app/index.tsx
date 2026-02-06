@@ -1,10 +1,9 @@
-// Login and Signup Screen
-// Main file to handle user authentication, sign up, and profile creation.
-/* Authentication code (lines 35-68) adapted from Firebase Auth documentation - https://firebase.google.com/docs/auth */
-/* User profile creation (lines 70-94) uses Firestore - https://firebase.google.com/docs/firestore */
+// I handle login, sign-up, password reset, and profile creation. I redirect verified users into the app.
+// Auth: https://firebase.google.com/docs/auth | Profile creation: https://firebase.google.com/docs/firestore
+// Ref: JavaScript async/await - https://www.w3schools.com/js/js_async.asp
 
 import { router } from 'expo-router'
-import { createUserWithEmailAndPassword, onAuthStateChanged, signInWithEmailAndPassword } from 'firebase/auth'
+import { createUserWithEmailAndPassword, onAuthStateChanged, sendEmailVerification, sendPasswordResetEmail, signInWithEmailAndPassword } from 'firebase/auth'
 import { doc, getDoc, serverTimestamp, setDoc } from 'firebase/firestore'
 import React, { useEffect, useState } from 'react'
 import { ActivityIndicator, SafeAreaView, ScrollView, StyleSheet, Text, TouchableOpacity, View } from 'react-native'
@@ -17,22 +16,30 @@ const index = () => {
   const [email, setEmail] = useState('');
   const [password, setPassword] = useState('');
   const [username, setUsername] = useState('');
-  const [userRole, setUserRole] = useState<'user' | 'admin'>('user');
   const [isSignUp, setIsSignUp] = useState(false);
   const [loading, setLoading] = useState(true);
   const [signingIn, setSigningIn] = useState(false);
   const [signingUp, setSigningUp] = useState(false);
+  const [resettingPassword, setResettingPassword] = useState(false);
+  const [passwordVisible, setPasswordVisible] = useState(false);
 
   useEffect(() => {
     const unsubscribe = onAuthStateChanged(auth, (user) => {
       if (user) {
-        router.replace('/(tabs)');
+        // I require email verification before allowing access to the main app.
+        if (!user.emailVerified) {
+          router.replace('/verify-email');
+        } else {
+          router.replace('/(tabs)');
+        }
       } else {
         setLoading(false);
       }
     });
     return () => unsubscribe();
   }, []);
+
+  const isValidEmail = (value: string) => /^[^\s@]+@[^\s@]+\.[^\s@]+$/.test(value.trim());
 
   const signIn = async () => {
     if (!email.trim() || !password.trim()) {
@@ -45,6 +52,12 @@ const index = () => {
       const userCredential = await signInWithEmailAndPassword(auth, email, password);
       
       if (userCredential.user) {
+        // If email is not verified, I keep them out of the main app.
+        if (!userCredential.user.emailVerified) {
+          router.replace('/verify-email');
+          return;
+        }
+
         const userRef = doc(db, 'users', userCredential.user.uid);
         const userSnap = await getDoc(userRef);
         
@@ -80,7 +93,9 @@ const index = () => {
     }
   }
 
-  const createUserProfile = async (userId: string, email: string, username: string, role: 'user' | 'admin' = 'user') => {
+  // I always create normal user accounts here.
+  // If you need admins, set that server-side (custom claims) or manually in Firebase Console.
+  const createUserProfile = async (userId: string, email: string, username: string) => {
     const userRef = doc(db, 'users', userId);
     const userSnap = await getDoc(userRef);
     
@@ -92,7 +107,7 @@ const index = () => {
       usernameLower: usernameValue.toLowerCase(),
       displayName: usernameValue,
       displayNameLower: usernameValue.toLowerCase(),
-      role: role,
+      role: 'user',
       createdAt: userSnap.exists() ? userSnap.data().createdAt : serverTimestamp(),
       updatedAt: serverTimestamp(),
     };
@@ -129,6 +144,11 @@ const index = () => {
       return;
     }
 
+    if (!isValidEmail(email)) {
+      alert('Please enter a valid email address');
+      return;
+    }
+
     if (!username.trim()) {
       alert('Please enter a username');
       return;
@@ -151,8 +171,14 @@ const index = () => {
       return;
     }
 
-    if (password.length < 6) {
-      alert('Password must be at least 6 characters');
+    // I enforce a slightly stronger password requirement for better security.
+    if (password.length < 8) {
+      alert('Password must be at least 8 characters');
+      return;
+    }
+
+    if (!/[A-Za-z]/.test(password) || !/[0-9]/.test(password)) {
+      alert('Password must contain at least one letter and one number');
       return;
     }
 
@@ -173,8 +199,15 @@ const index = () => {
       const userCredential = await createUserWithEmailAndPassword(auth, email, password);
       
       if (userCredential.user) {
-        await createUserProfile(userCredential.user.uid, email, usernameTrimmed, userRole);
-        router.replace('/(tabs)');
+        await createUserProfile(userCredential.user.uid, email, usernameTrimmed);
+
+        // I send an email verification link and send the user to the verification screen.
+        try {
+          await sendEmailVerification(userCredential.user);
+        } catch {
+        }
+
+        router.replace('/verify-email');
       }
     } catch (error: any) {
       alert('Sign up failed: ' + (error.message || 'Unknown error'));
@@ -182,6 +215,28 @@ const index = () => {
       setSigningUp(false);
     }
   }
+
+  const onForgotPassword = async () => {
+    const emailTrimmed = email.trim();
+    if (!emailTrimmed) {
+      alert('Enter your email first so I can send a reset link.');
+      return;
+    }
+    if (!isValidEmail(emailTrimmed)) {
+      alert('Please enter a valid email address.');
+      return;
+    }
+
+    try {
+      setResettingPassword(true);
+      await sendPasswordResetEmail(auth, emailTrimmed);
+      alert('Password reset email sent. Check your inbox.');
+    } catch (e: any) {
+      alert('Could not send reset email: ' + (e?.message || 'Unknown error'));
+    } finally {
+      setResettingPassword(false);
+    }
+  };
 
   if (loading) {
     return (
@@ -220,40 +275,6 @@ const index = () => {
                 placeholder="username"
                 maxLength={20}
               />
-              
-              <View style={styles.roleContainer}>
-                <Text style={styles.roleLabel}>Account Type:</Text>
-                <View style={styles.roleButtons}>
-                  <TouchableOpacity
-                    style={[
-                      styles.roleButton,
-                      userRole === 'user' && styles.roleButtonActive
-                    ]}
-                    onPress={() => setUserRole('user')}
-                  >
-                    <Text style={[
-                      styles.roleButtonText,
-                      userRole === 'user' && styles.roleButtonTextActive
-                    ]}>
-                      Normal User
-                    </Text>
-                  </TouchableOpacity>
-                  <TouchableOpacity
-                    style={[
-                      styles.roleButton,
-                      userRole === 'admin' && styles.roleButtonActive
-                    ]}
-                    onPress={() => setUserRole('admin')}
-                  >
-                    <Text style={[
-                      styles.roleButtonText,
-                      userRole === 'admin' && styles.roleButtonTextActive
-                    ]}>
-                      Admin
-                    </Text>
-                  </TouchableOpacity>
-                </View>
-              </View>
             </>
           )}
           
@@ -270,10 +291,19 @@ const index = () => {
             label="Password"
             value={password}
             onChangeText={setPassword}
-            secureTextEntry
+            secureTextEntry={!passwordVisible}
             autoCapitalize="none"
             placeholder="password"
           />
+
+          <TouchableOpacity
+            onPress={() => setPasswordVisible(v => !v)}
+            style={{ width: '100%', marginTop: 8 }}
+          >
+            <Text style={{ color: '#666666', fontSize: 14, fontWeight: '700', textDecorationLine: 'underline' }}>
+              {passwordVisible ? 'Hide password' : 'Show password'}
+            </Text>
+          </TouchableOpacity>
           
           {!isSignUp && (
             <AppButton
@@ -283,6 +313,18 @@ const index = () => {
               disabled={signingIn || signingUp}
               style={{ marginTop: 8 }}
             />
+          )}
+
+          {!isSignUp && (
+            <TouchableOpacity
+              onPress={onForgotPassword}
+              disabled={resettingPassword || signingIn}
+              style={{ width: '100%', marginTop: 14 }}
+            >
+              <Text style={{ color: '#666666', fontSize: 14, fontWeight: '700', textDecorationLine: 'underline' }}>
+                {resettingPassword ? 'Sending reset email…' : 'Forgot password?'}
+              </Text>
+            </TouchableOpacity>
           )}
           
           {isSignUp && (
@@ -299,7 +341,7 @@ const index = () => {
             onPress={() => {
               setIsSignUp(!isSignUp);
               setUsername('');
-              setUserRole('user'); // Reset to default role
+              setPasswordVisible(false);
             }}
             style={styles.toggleButton}
           >

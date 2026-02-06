@@ -1,4 +1,5 @@
-/* Member management functions use Firestore operations - https://firebase.google.com/docs/firestore */
+// I handle league members and invites: resolve user by email, add members, list members/invites, resend invite, set role. I use Firestore for all operations.
+// Ref: Firestore - https://firebase.google.com/docs/firestore
 import { auth, db } from '../../FirebaseConfig';
 import { collection, query, where,
   getDocs, doc, getDoc, setDoc, serverTimestamp, deleteDoc,
@@ -15,7 +16,6 @@ type ResolvedUser = {
   email?: string | null;
 };
 
-/* User lookup by email (lines 18-40) uses Firestore queries - https://firebase.google.com/docs/firestore/query-data/queries */
 export async function resolveUserByEmail(email: string): Promise<ResolvedUser | null> {
   const emailLower = (email ?? '').trim().toLowerCase();
   if (!emailLower) return null;
@@ -40,8 +40,6 @@ export async function resolveUserByEmail(email: string): Promise<ResolvedUser | 
   };
 }
 
-/* Add member to league function (lines 58-133) uses Firestore setDoc - https://firebase.google.com/docs/firestore/manage-data/add-data */
-/* I adapted it to handle both existing users (add directly) and non-existent users (create invite) */
 export async function addMemberToLeague(opts: {
   leagueId: string;
   email: string;

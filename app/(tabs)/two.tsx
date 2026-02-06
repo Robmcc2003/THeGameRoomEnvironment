@@ -1,7 +1,5 @@
-// Browse Leagues Screen
-// I display all available leagues that users can browse and join.
-/* League fetching code (lines 47-90) uses Firestore queries - https://firebase.google.com/docs/firestore/query-data/get-data */
-/* FlatList component from React Native - https://reactnative.dev/docs/flatlist */
+// I display all leagues for browsing and joining. I fetch leagues from Firestore and render them in a FlatList.
+// Ref: Firestore get data - https://firebase.google.com/docs/firestore/query-data/get-data
 import { useRouter } from 'expo-router';
 import { getAuth } from 'firebase/auth';
 import { collection, getDocs, query, where } from 'firebase/firestore';
@@ -89,7 +87,7 @@ export default function TabTwoScreen() {
   };
 
   // Handle joining a league
-  // this function calls the joinTournament function and updates the UI after successful join.
+  // this function calls the joinTournament function and updates the UI after successful join. It also handles errors and shows appropriate messages
   const handleJoinLeague = async (leagueId: string) => {
     if (!user) {
       Alert.alert('Error', 'You must be signed in to join a league.');
@@ -316,7 +314,7 @@ export default function TabTwoScreen() {
   );
 }
 
-// Styles for the Explore Leagues screen
+// styling for the explore Leagues screen
 const styles = StyleSheet.create({
   safeArea: {
     flex: 1,
