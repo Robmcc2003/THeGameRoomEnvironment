@@ -83,7 +83,7 @@ export default function LeagueDetailScreen() {
     if (router.canGoBack()) {
       router.back();
     } else {
-      router.push('/(tabs)/four');
+      router.push('/(tabs)/my-leagues');
     }
   }, [router]);
 

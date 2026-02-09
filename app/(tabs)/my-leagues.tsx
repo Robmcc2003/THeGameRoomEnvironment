@@ -12,7 +12,7 @@ import { auth, db } from '../../FirebaseConfig';
 import Logo from '../../components/Logo';
 import { Text, View } from '../../components/Themed';
 import { styles } from '../../components/style.four';
-import { getUserProgress } from '../../components/lib/tournaments';
+import { getUserProgress, autoGenerateBracketIfNeeded, generateRoundRobinFixtures, createEmptyBracketStructure } from '../../components/lib/tournaments';
 import { GameType, getAvailableGameTypes } from '../../components/lib/gameTypes';
 import { AppButton, AppCard, AppInput, useAppTheme } from '../../components/ui';
 import { useColorScheme } from '../../components/useColorScheme';
@@ -204,13 +204,27 @@ export default function TabFourScreen() {
       return;
     }
 
+    if (!tournamentType) {
+      Alert.alert('Error', 'Please select a tournament type');
+      return;
+    }
+
     try {
+      // Map tournament type to tournamentFormat
+      const tournamentFormat = 
+        tournamentType === 'league' ? 'normal_league' :
+        tournamentType === 'knockout' ? 'single_elimination' :
+        tournamentType === 'round_robin' ? 'round_robin' :
+        null;
+
       // Create new league doc in Firestore
       // addDoc() automatically generates a unique docID to identufy different leagues
       const leagueRef = await addDoc(collection(db, 'leagues'), {
         name: leagueName.trim(),
         game: game.trim() || null,
         gameType: gameType || null,
+        tournamentFormat: tournamentFormat,
+        maxParticipants: maxParticipants ? parseInt(maxParticipants, 10) : null,
         ownerId: uid,
         createdAt: serverTimestamp(), 
         updatedAt: serverTimestamp(),
@@ -237,6 +251,29 @@ export default function TabFourScreen() {
         joinedAt: serverTimestamp(),
         addedBy: uid,
       });
+
+      // Initialize tournament structure based on format
+      if (tournamentFormat === 'single_elimination' || tournamentFormat === 'double_elimination') {
+        // Knockout: create empty bracket structure (visible even before members join)
+        try {
+          await createEmptyBracketStructure(leagueRef.id);
+        } catch (err) {
+          // If empty bracket fails, try auto-generate (requires 2+ members)
+          try {
+            await autoGenerateBracketIfNeeded(leagueRef.id);
+          } catch {
+            // Ignore - bracket will generate when members join
+          }
+        }
+      } else if (tournamentFormat === 'round_robin') {
+        // Round robin: generate fixtures (will create when 2+ members join)
+        try {
+          await generateRoundRobinFixtures(leagueRef.id);
+        } catch (err) {
+          // Ignore errors (e.g. not enough members yet) - fixtures will generate when members join
+        }
+      }
+      // Normal league: no initialization needed (standings calculated dynamically from matches)
 
       // Clear the form
       setLeagueName('');

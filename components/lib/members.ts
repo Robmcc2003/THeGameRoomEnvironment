@@ -4,7 +4,7 @@ import { auth, db } from '../../FirebaseConfig';
 import { collection, query, where,
   getDocs, doc, getDoc, setDoc, serverTimestamp, deleteDoc,
 } from 'firebase/firestore';
-import { autoGenerateBracketIfNeeded } from './tournaments';
+import { autoGenerateBracketIfNeeded, generateRoundRobinFixtures } from './tournaments';
 
 export type MemberRole = 'member' | 'admin';
 export type MemberStatus = 'active' | 'invited' | 'pending';
@@ -92,9 +92,32 @@ export async function addMemberToLeague(opts: {
       addedBy: current.uid, // Who added them (the person calling this function)
     });
 
-    // Auto-generate brackets if conditions are met
+    // Auto-generate brackets/fixtures if conditions are met
     // This makes the bracket tab always useful without manual intervention
-    await autoGenerateBracketIfNeeded(leagueId);
+    const leagueRef = doc(db, 'leagues', leagueId);
+    const leagueSnap = await getDoc(leagueRef);
+    if (leagueSnap.exists()) {
+      const leagueData = leagueSnap.data();
+      const format = leagueData.tournamentFormat;
+      if (format === 'single_elimination' || format === 'double_elimination') {
+        await autoGenerateBracketIfNeeded(leagueId);
+      } else if (format === 'round_robin') {
+        // Check if fixtures already exist
+        const matchesQuery = query(
+          collection(db, 'tournamentMatches'),
+          where('leagueId', '==', leagueId)
+        );
+        const matchesSnap = await getDocs(matchesQuery);
+        if (matchesSnap.size === 0) {
+          // No fixtures yet, try to generate them (needs 2+ members)
+          try {
+            await generateRoundRobinFixtures(leagueId);
+          } catch {
+            // Ignore if not enough members yet
+          }
+        }
+      }
+    }
 
     return { kind: 'added', memberId, user };
   }

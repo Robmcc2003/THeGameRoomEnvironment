@@ -2,16 +2,16 @@
 // Ref: Date toLocaleDateString - https://www.w3schools.com/jsref/jsref_tolocaledatestring.asp
 import { useLocalSearchParams, useRouter } from 'expo-router';
 import { Stack } from 'expo-router/stack';
+import { collection, doc, getDoc, getDocs, query, where } from 'firebase/firestore';
 import React, { useCallback, useEffect, useMemo, useState } from 'react';
-import { ActivityIndicator, Alert, Dimensions, FlatList, Modal, RefreshControl, ScrollView, TextInput, TouchableOpacity, View as RNView } from 'react-native';
-import { Text, View } from '../../../components/Themed';
+import { ActivityIndicator, Alert, Dimensions, Modal, RefreshControl, View as RNView, ScrollView, TextInput, TouchableOpacity } from 'react-native';
+import { auth, db } from '../../../FirebaseConfig';
 import Logo from '../../../components/Logo';
+import { Text, View } from '../../../components/Themed';
+import { GameType, getGameConfig } from '../../../components/lib/gameTypes';
+import { autoGenerateBracketIfNeeded, getTournamentBracket, getTournamentStandings, Match, updateMatchScore, verifyMatchScore } from '../../../components/lib/tournaments';
 import { useColorScheme } from '../../../components/useColorScheme';
 import Colors from '../../../constants/Colors';
-import { collection, doc, getDoc, getDocs, query, where } from 'firebase/firestore';
-import { auth, db } from '../../../FirebaseConfig';
-import { getTournamentBracket, getTournamentStandings, Match, autoGenerateBracketIfNeeded, updateMatchScore, verifyMatchScore } from '../../../components/lib/tournaments';
-import { getGameConfig, GameType } from '../../../components/lib/gameTypes';
 
 type LeagueDoc = {
   name: string;

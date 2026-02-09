@@ -383,6 +383,176 @@ export async function generateBracketMatches(leagueId: string): Promise<void> {
   await generateBracketMatchesInternal(leagueId, tournamentFormat, members);
 }
 
+// Create empty bracket structure for knockout tournaments (visible even before members join).
+// Uses maxParticipants from league or defaults to 8/16/32 based on a reasonable size.
+export async function createEmptyBracketStructure(leagueId: string): Promise<void> {
+  const leagueRef = doc(db, 'leagues', leagueId);
+  const leagueSnap = await getDoc(leagueRef);
+  
+  if (!leagueSnap.exists()) {
+    throw new Error('League not found.');
+  }
+
+  const leagueData = leagueSnap.data();
+  const tournamentFormat = leagueData.tournamentFormat;
+  
+  if (tournamentFormat !== 'single_elimination' && tournamentFormat !== 'double_elimination') {
+    return; // Not a knockout tournament
+  }
+
+  // Check if matches already exist
+  const existingMatchesQuery = query(
+    collection(db, 'tournamentMatches'),
+    where('leagueId', '==', leagueId)
+  );
+  const existingMatchesSnap = await getDocs(existingMatchesQuery);
+  if (existingMatchesSnap.size > 0) {
+    return; // Already has matches
+  }
+
+  // Determine bracket size (use maxParticipants or default to 8)
+  const maxParticipants = leagueData.maxParticipants || 8;
+  // Round up to nearest power of 2 (8, 16, 32, etc.) for clean bracket
+  let bracketSize = 8;
+  if (maxParticipants <= 8) bracketSize = 8;
+  else if (maxParticipants <= 16) bracketSize = 16;
+  else if (maxParticipants <= 32) bracketSize = 32;
+  else bracketSize = 64;
+
+  const numRounds = Math.ceil(Math.log2(bracketSize));
+  const firstRoundMatches = bracketSize / 2;
+
+  // Create empty placeholder matches for all rounds
+  const matchesToCreate: any[] = [];
+  let matchNumber = 1;
+
+  // First round: empty slots
+  for (let i = 0; i < firstRoundMatches; i++) {
+    matchesToCreate.push({
+      leagueId,
+      round: 1,
+      matchNumber: matchNumber++,
+      player1Id: null,
+      player2Id: null,
+      status: 'pending' as MatchStatus,
+      createdAt: serverTimestamp(),
+    });
+  }
+
+  // Subsequent rounds: empty placeholder matches
+  if (tournamentFormat === 'single_elimination') {
+    let currentRoundMatches = firstRoundMatches;
+    let currentRound = 2;
+    
+    while (currentRoundMatches > 1) {
+      const nextRoundMatches = Math.ceil(currentRoundMatches / 2);
+      let nextMatchNumber = 1;
+      
+      for (let i = 0; i < nextRoundMatches; i++) {
+        matchesToCreate.push({
+          leagueId,
+          round: currentRound,
+          matchNumber: nextMatchNumber++,
+          player1Id: null,
+          player2Id: null,
+          status: 'pending' as MatchStatus,
+          createdAt: serverTimestamp(),
+        });
+      }
+      
+      currentRoundMatches = nextRoundMatches;
+      currentRound++;
+    }
+  }
+
+  // Save all matches to Firestore
+  const matchesCollection = collection(db, 'tournamentMatches');
+  for (const matchData of matchesToCreate) {
+    const matchId = `${leagueId}_r${matchData.round}_m${matchData.matchNumber}`;
+    const matchRef = doc(matchesCollection, matchId);
+    await setDoc(matchRef, {
+      id: matchId,
+      ...matchData,
+    });
+  }
+}
+
+// Generate Round Robin fixtures: everyone plays everyone once.
+export async function generateRoundRobinFixtures(leagueId: string): Promise<void> {
+  const current = auth.currentUser;
+  if (!current) throw new Error('You must be signed in.');
+
+  const leagueRef = doc(db, 'leagues', leagueId);
+  const leagueSnap = await getDoc(leagueRef);
+  
+  if (!leagueSnap.exists()) {
+    throw new Error('League not found.');
+  }
+
+  const leagueData = leagueSnap.data();
+  const isOwner = leagueData.ownerId === current.uid;
+  const isAdmin = Array.isArray(leagueData.admins) && leagueData.admins.includes(current.uid);
+  if (!isOwner && !isAdmin) {
+    throw new Error('Only league owners and admins can generate fixtures.');
+  }
+
+  if (leagueData.tournamentFormat !== 'round_robin') {
+    throw new Error('This function is only for round robin tournaments.');
+  }
+
+  // Check if matches already exist
+  const existingMatchesQuery = query(
+    collection(db, 'tournamentMatches'),
+    where('leagueId', '==', leagueId)
+  );
+  const existingMatchesSnap = await getDocs(existingMatchesQuery);
+  if (existingMatchesSnap.size > 0) {
+    throw new Error('Fixtures already exist. Delete existing matches first to regenerate.');
+  }
+
+  // Get all active members
+  const membersQuery = query(
+    collection(db, 'leagueMembers'),
+    where('leagueId', '==', leagueId),
+    where('status', '==', 'active')
+  );
+  const membersSnap = await getDocs(membersQuery);
+  const members = membersSnap.docs.map(d => d.data());
+  
+  if (members.length < 2) {
+    throw new Error('Need at least 2 participants to generate fixtures.');
+  }
+
+  // Generate all pairs: everyone plays everyone once
+  const matchesToCreate: any[] = [];
+  let matchNumber = 1;
+
+  for (let i = 0; i < members.length; i++) {
+    for (let j = i + 1; j < members.length; j++) {
+      matchesToCreate.push({
+        leagueId,
+        round: 1, // All round robin matches are in round 1
+        matchNumber: matchNumber++,
+        player1Id: members[i].userId,
+        player2Id: members[j].userId,
+        status: 'pending' as MatchStatus,
+        createdAt: serverTimestamp(),
+      });
+    }
+  }
+
+  // Save all matches to Firestore
+  const matchesCollection = collection(db, 'tournamentMatches');
+  for (const matchData of matchesToCreate) {
+    const matchId = `${leagueId}_r${matchData.round}_m${matchData.matchNumber}`;
+    const matchRef = doc(matchesCollection, matchId);
+    await setDoc(matchRef, {
+      id: matchId,
+      ...matchData,
+    });
+  }
+}
+
 // Get Tournament Standings
 // This function calculates the leaderboard for a tournament.
 // It counts wins and losses for each player and calculates their win rate.

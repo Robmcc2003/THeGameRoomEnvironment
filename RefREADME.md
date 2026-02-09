@@ -120,7 +120,7 @@ League member management, invites, and role assignments.
 
 - **Source**: Firebase Auth Reference
 - **URL**: https://firebase.google.com/docs/reference/js/auth#signout
-- **Location**: `app/(tabs)/index.tsx` (lines 3, 31-61)
+- **Location**: `app/(tabs)/sign-out.tsx` (lines 3, 31-61)
 - **Description**: User sign out functionality
 
 ### Firestore Operations
@@ -131,7 +131,7 @@ League member management, invites, and role assignments.
 
 - **Source**: Firestore Documentation
 - **URL**: https://firebase.google.com/docs/firestore/query-data/listen
-- **Location**: `app/(tabs)/four.tsx` (lines 3-4, 92-180)
+- **Location**: `app/(tabs)/my-leagues.tsx` (lines 3-4, 92-180)
 - **Description**: Real-time listener for league memberships. Modified to handle multiple leagues and cleanup
 
 - **Source**: Firestore Documentation
@@ -161,7 +161,7 @@ League member management, invites, and role assignments.
 
 - **Source**: Firestore Documentation
 - **URL**: https://firebase.google.com/docs/firestore/query-data/get-data
-- **Location**: `app/(tabs)/two.tsx` (lines 47-90), `app/league/[leagueId]/index.tsx` (lines 150-173)
+- **Location**: `app/(tabs)/home.tsx` (lines 47-90), `app/league/[leagueId]/index.tsx` (lines 150-173)
 - **Description**: League fetching and member list loading using Firestore queries
 
 ### Tournament Bracket Algorithm
@@ -184,12 +184,12 @@ League member management, invites, and role assignments.
 
 - **Source**: React Native Documentation
 - **URL**: https://reactnative.dev/docs/flatlist
-- **Location**: `app/(tabs)/two.tsx` (throughout), `app/league/[leagueId]/index.tsx` (throughout)
+- **Location**: `app/(tabs)/home.tsx` (throughout), `app/league/[leagueId]/index.tsx` (throughout)
 - **Description**: FlatList component for displaying lists
 
 - **Source**: React Native Documentation
 - **URL**: https://reactnative.dev/docs/refreshcontrol
-- **Location**: `app/(tabs)/three.tsx` (throughout)
+- **Location**: `app/(tabs)/profile.tsx` (throughout)
 - **Description**: RefreshControl for pull-to-refresh functionality
 
 - **Source**: React Native Documentation
@@ -211,17 +211,17 @@ League member management, invites, and role assignments.
 
 - **Source**: W3Schools JavaScript Array filter()
 - **URL**: https://www.w3schools.com/jsref/jsref_filter.asp
-- **Location**: `app/(tabs)/three.tsx`, `app/notifications.tsx`, `components/lib/badges.ts` (filtering lists)
+- **Location**: `app/(tabs)/profile.tsx`, `app/notifications.tsx`, `components/lib/badges.ts` (filtering lists)
 - **Description**: Array filter for filtering results and lists
 
 - **Source**: W3Schools JavaScript Date toLocaleDateString()
 - **URL**: https://www.w3schools.com/jsref/jsref_tolocaledatestring.asp
-- **Location**: `app/(tabs)/three.tsx` (formatDate), `app/league/[leagueId]/bracket.tsx`, `app/user/[userId].tsx`
+- **Location**: `app/(tabs)/profile.tsx` (formatDate), `app/league/[leagueId]/bracket.tsx`, `app/user/[userId].tsx`
 - **Description**: Date formatting for tournament history and match dates
 
 - **Source**: W3Schools React useState Hook
 - **URL**: https://www.w3schools.com/react/react_usestate.asp
-- **Location**: Throughout app and tab screens (e.g. `app/(tabs)/index.tsx`, `app/league/[leagueId]/chat.tsx`)
+- **Location**: Throughout app and tab screens (e.g. `app/(tabs)/sign-out.tsx`, `app/league/[leagueId]/chat.tsx`)
 - **Description**: State management with useState in React components
 
 ### League chat, badges, and email verification

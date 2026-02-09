@@ -19,13 +19,21 @@ export default function TabLayout() {
 
   return (
     <Tabs
+      initialRouteName="sign-out"
       screenOptions={{
         tabBarActiveTintColor: Colors[colorScheme ?? 'light'].tint,
         headerShown: false,
       }}>
-      {/* Tab 1: Sign Out screen */}
+      {/* Hidden index route - only used for /(tabs) navigation, not shown in tab bar */}
       <Tabs.Screen
         name="index"
+        options={{
+          href: null, // Hide from tab bar
+        }}
+      />
+      {/* Tab 1: Sign Out screen */}
+      <Tabs.Screen
+        name="sign-out"
         options={{
           title: 'Sign Out',
           tabBarIcon: ({ color }) => <TabBarIcon name="sign-out" color={color} />,
@@ -34,7 +42,7 @@ export default function TabLayout() {
       
       {/* Tab 2: Home screen - Explore leagues */}
       <Tabs.Screen
-        name="two"
+        name="home"
         options={{
           title: 'Home',
           tabBarIcon: ({ color }) => <TabBarIcon name="home" color={color} />,
@@ -43,7 +51,7 @@ export default function TabLayout() {
       
       {/* Tab 3: Profile screen - User stats and tournament history */}
       <Tabs.Screen
-        name="three"
+        name="profile"
         options={{
           title: 'Profile',
           tabBarIcon: ({ color }) => <TabBarIcon name="user" color={color} />,
@@ -52,7 +60,7 @@ export default function TabLayout() {
       
       {/* Tab 4: My Leagues screen - Create and manage leagues */}
       <Tabs.Screen
-        name="four"
+        name="my-leagues"
         options={{
           title: 'My Leagues',
           tabBarIcon: ({ color }) => <TabBarIcon name="bars" color={color} />,

@@ -1,5 +1,5 @@
 // Root Layout File
-// I handle app-wide navigation, authentication state, theme, fonts, and splash screen.
+// handle app-wide navigation, authentication state, theme, fonts, and splash screen.
 /* Navigation structure (lines 11-109) adapted from Expo Router documentation - https://docs.expo.dev/router/introduction/ */
 /* Font loading code (lines 37-40) from Expo Fonts guide - https://docs.expo.dev/guides/using-custom-fonts/ */
 /* Splash screen handling (lines 32, 46-50) from Expo Splash Screen guide - https://docs.expo.dev/guides/splash-screens/ */
