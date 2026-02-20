@@ -1,22 +1,24 @@
-// displaying the profile tab: user stats, tournament history, find friends, badges, and shooter stats. I use Firestore for data and RefreshControl for pull-to-refresh so it works just like most apps with a profile screen. 
-// I also auto-award badges when the profile loads, so if an admin verifies a match win you can pull to refresh and see the new badge without needing to re-login or anything.
-// Ref: Date toLocaleDateString - https://www.w3schools.com/jsref/jsref_tolocaledatestring.asp
-// Ref: Array filter - https://www.w3schools.com/jsref/jsref_filter.asp
+// profile tab: stats, tournament history, find friends, badges, shooter stats; auto-award badges on load
+// ref: Date toLocaleDateString - https://www.w3schools.com/jsref/jsref_tolocaledatestring.asp
+// ref: Array filter - https://www.w3schools.com/jsref/jsref_filter.asp
 import { useFocusEffect, useRouter } from 'expo-router';
 import { onAuthStateChanged } from 'firebase/auth';
 import React, { useCallback, useEffect, useState } from 'react';
-import { ActivityIndicator, FlatList, RefreshControl, SafeAreaView, ScrollView, StyleSheet, TouchableOpacity, View } from 'react-native';
-import { auth } from '../../FirebaseConfig';
+import { ActivityIndicator, FlatList, Image, RefreshControl, SafeAreaView, ScrollView, StyleSheet, TouchableOpacity, View } from 'react-native';
+import { auth, db } from '../../FirebaseConfig';
+import { doc, getDoc } from 'firebase/firestore';
 import Logo from '../../components/Logo';
 import { Text } from '../../components/Themed';
 import { getUserOverallStats, getUserTournamentHistory, getUserGameSpecificStats } from '../../components/lib/tournaments';
 import { useColorScheme } from '../../components/useColorScheme';
 import Colors from '../../constants/Colors';
 import { getGameConfig } from '../../components/lib/gameTypes';
-import { PublicUserSummary, searchUsers } from '../../components/lib/users';
-import { AppBadge, AppButton, AppCard, AppInput, AchievementBadgeTile, useAppTheme } from '../../components/ui';
+import { PublicUserSummary, searchUsers, updateMyAvatarId } from '../../components/lib/users';
+import { getProfileImageUrl } from '../../components/lib/avatars';
+import { AppBadge, AppButton, AppCard, AppInput, AchievementBadgeTile, AvatarPicker, useAppTheme } from '../../components/ui';
 import { BADGES, ensureBadgesUpToDateForUser, getUserEarnedBadges } from '../../components/lib/badges';
 
+// stats from tournaments lib
 type UserStats = {
   totalWins: number;
   totalLosses: number;
@@ -26,6 +28,7 @@ type UserStats = {
   tournamentsWon: number;
 };
 
+// history item for tournament list
 type TournamentHistoryItem = {
   leagueId: string;
   leagueName: string;
@@ -62,7 +65,10 @@ export default function TabThreeScreen() {
   const [friendError, setFriendError] = useState<string | null>(null);
   const [earnedBadges, setEarnedBadges] = useState<Record<string, any>>({});
   const [loadingBadges, setLoadingBadges] = useState(false);
+  const [avatarId, setAvatarId] = useState<string | null>(null);
+  const [avatarPickerVisible, setAvatarPickerVisible] = useState(false);
 
+  // debounced friend search: wait 250ms after typing
   useEffect(() => {
     let cancelled = false;
     const q = friendQuery.trim();
@@ -94,11 +100,11 @@ export default function TabThreeScreen() {
     };
   }, [friendQuery, uid]);
 
+  // listen for auth changes, sync uid and display name
   useEffect(() => {
     const unsub = onAuthStateChanged(auth, (user) => {
       setUid(user?.uid ?? null);
       if (user) {
-        // Get user display name
         const displayName = user.displayName || user.email?.split('@')[0] || 'Player';
         setUserDisplayName(displayName);
       }
@@ -119,8 +125,13 @@ export default function TabThreeScreen() {
       ]);
       setStats(statsData);
       setHistory(historyData);
+
+      // load current user avatarId from Firestore
+      const userSnap = await getDoc(doc(db, 'users', uid));
+      const userData = userSnap.exists() ? (userSnap.data() as any) : null;
+      setAvatarId(userData?.avatarId ?? null);
       
-      // Load shooter game stats (Call of Duty)
+      // load shooter game stats (Call of Duty)
       setLoadingShooterStats(true);
       try {
         const codStats = await getUserGameSpecificStats(uid, 'CALL_OF_DUTY');
@@ -131,13 +142,13 @@ export default function TabThreeScreen() {
         setLoadingShooterStats(false);
       }
 
-      // Load and auto-award badges (best-effort)
+      // load and auto-award badges (best-effort)
       setLoadingBadges(true);
       try {
         const updated = await ensureBadgesUpToDateForUser(uid);
         setEarnedBadges(updated);
       } catch {
-        // Fallback to read-only if awarding fails (e.g. rules)
+        // fallback to read-only if awarding fails (e.g. rules)
         try {
           const onlyRead = await getUserEarnedBadges(uid);
           setEarnedBadges(onlyRead);
@@ -148,7 +159,7 @@ export default function TabThreeScreen() {
         setLoadingBadges(false);
       }
     } catch {
-      // I ignore load errors here and rely on existing state.
+      // ignore load errors, rely on existing state
     } finally {
       setLoading(false);
       setRefreshing(false);
@@ -161,7 +172,7 @@ export default function TabThreeScreen() {
     }
   }, [uid]);
 
-  // rerun badge check when the profile tab is focused e.g. after an admin verifies a match
+  // re-run badge check when profile tab focused (e.g. after admin verifies match or user wins tournament) - best-effort to keep badges up to date without needing a full refresh
   useFocusEffect(
     useCallback(() => {
       if (!uid) return;
@@ -174,7 +185,7 @@ export default function TabThreeScreen() {
             const onlyRead = await getUserEarnedBadges(uid);
             setEarnedBadges(onlyRead);
           } catch {
-            // Keep existing state.
+            // keep existing state
           }
         }
       })();
@@ -186,7 +197,7 @@ export default function TabThreeScreen() {
     loadProfileData();
   };
 
-  /* Date formatting function (lines 96-108) uses JavaScript Date API - https://developer.mozilla.org/en-US/docs/Web/JavaScript/Reference/Global_Objects/Date */
+  // format timestamp
   const formatDate = (timestamp: any): string => {
     if (!timestamp) return 'Ongoing';
     try {
@@ -264,9 +275,57 @@ export default function TabThreeScreen() {
         {/* Header */}
         <View style={styles.header}>
           <Logo size="medium" showTagline={false} />
+          <TouchableOpacity
+            onPress={() => setAvatarPickerVisible(true)}
+            activeOpacity={0.8}
+            style={{ marginTop: 12 }}
+          >
+            {getProfileImageUrl({ photoURL: null, avatarId }) ? (
+              <Image
+                source={{ uri: getProfileImageUrl({ photoURL: null, avatarId })! }}
+                style={{ width: 80, height: 80, borderRadius: 40, backgroundColor: cardBg, borderWidth: 2, borderColor }}
+              />
+            ) : (
+              <View
+                style={{
+                  width: 80,
+                  height: 80,
+                  borderRadius: 40,
+                  backgroundColor: tint + '30',
+                  borderWidth: 2,
+                  borderColor,
+                  alignItems: 'center',
+                  justifyContent: 'center',
+                }}
+              >
+                <Text style={{ fontWeight: '900', fontSize: 32, color: tint }}>
+                  {(userDisplayName[0] || '?').toUpperCase()}
+                </Text>
+              </View>
+            )}
+          </TouchableOpacity>
+          <Text style={[styles.avatarHint, { color: '#666' }]}>Tap to change avatar</Text>
           <Text style={[styles.userName, { color: textColor }]}>{userDisplayName}</Text>
           <Text style={[styles.subtitle, { color: '#666' }]}>Your Tournament Profile</Text>
         </View>
+
+        <AvatarPicker
+          visible={avatarPickerVisible}
+          selectedAvatarId={avatarId}
+          onSelect={async (id) => {
+            if (!uid) return;
+            try {
+              await updateMyAvatarId(uid, id);
+              setAvatarId(id);
+              setAvatarPickerVisible(false);
+            } catch (e: any) {
+              // best-effort: close and set local state so UI feels responsive
+              setAvatarId(id);
+              setAvatarPickerVisible(false);
+            }
+          }}
+          onClose={() => setAvatarPickerVisible(false)}
+        />
 
         {/* Find friends */}
         <View style={{ marginHorizontal: 20, marginBottom: 24, zIndex: 1000, elevation: 10 }}>
@@ -381,18 +440,11 @@ export default function TabThreeScreen() {
                           activeOpacity={0.7}
                         >
                           <View style={{ flexDirection: 'row', alignItems: 'center', gap: 12 }}>
-                            {u.photoURL ? (
-                              <View
-                                style={{
-                                  width: 40,
-                                  height: 40,
-                                  borderRadius: 20,
-                                  backgroundColor: tint + '20',
-                                  overflow: 'hidden',
-                                }}
-                              >
-                                {/* I reserve this area for a profile image when photoURL is present. */}
-                              </View>
+                            {getProfileImageUrl(u) ? (
+                              <Image
+                                source={{ uri: getProfileImageUrl(u)! }}
+                                style={{ width: 40, height: 40, borderRadius: 20, backgroundColor: tint + '20' }}
+                              />
                             ) : (
                               <View
                                 style={{
@@ -627,6 +679,11 @@ const styles = StyleSheet.create({
     borderBottomWidth: 2,
     borderBottomColor: '#000000',
     marginBottom: 20,
+  },
+  avatarHint: {
+    fontSize: 12,
+    fontWeight: '600',
+    marginTop: 6,
   },
   userName: {
     fontSize: 28,

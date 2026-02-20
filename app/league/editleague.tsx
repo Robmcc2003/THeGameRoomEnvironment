@@ -1,5 +1,5 @@
-// I let league owners edit league settings and tournament details; I use KeyboardAvoidingView and Firestore updateDoc.
-// Ref: KeyboardAvoidingView - https://reactnative.dev/docs/keyboardavoidingview
+// league owners edit league settings and tournament details; KeyboardAvoidingView and Firestore
+// ref: KeyboardAvoidingView - https://reactnative.dev/docs/keyboardavoidingview
 import React, { useEffect, useState } from 'react';
 import {
   Alert,
@@ -29,12 +29,12 @@ export default function EditLeagueScreen() {
   const { leagueId } = useLocalSearchParams<{ leagueId: string }>();
   const router = useRouter();
 
-  // I get theme colours for light and dark mode
+  // theme colours for light and dark mode
   const scheme = useColorScheme() ?? 'light';
   const palette = Colors[scheme];
   const tint = palette.tint;
 
-  // I set fallback colours incase palette doesn't provide them
+  // fallback colours if palette missing
   const cardBg = palette.card ?? (scheme === 'dark' ? '#16181A' : '#FFFFFF');
   const borderColor = palette.border ?? (scheme === 'dark' ? '#2A2D2F' : '#E6E6E6');
   const textColor = palette.text ?? '#1F1F1F';

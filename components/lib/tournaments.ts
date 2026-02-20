@@ -1,5 +1,5 @@
-// I handle tournaments: join, bracket generation, matches, scores, verification, standings, and user stats. I use Firestore for persistence.
-// Ref: Bracket generation algorithm - https://chatgpt.com/share/6973b4c9-23c8-8007-98f1-d6533d1d01fe
+// tournaments: join, bracket generation, matches, scores, verification, standings, user stats
+// ref: bracket algorithm - https://chatgpt.com/share/6973b4c9-23c8-8007-98f1-d6533d1d01fe
 import { auth, db } from '../../FirebaseConfig';
 import { collection, query, where, getDocs, doc, getDoc, setDoc, serverTimestamp, updateDoc, deleteDoc } from 'firebase/firestore';
 import { getGameConfig } from './gameTypes';
@@ -37,6 +37,7 @@ export type TournamentBracket = {
   currentRound: number;
 };
 
+// add user to league as member, create member doc, auto-generate bracket if needed
 export async function joinTournament(leagueId: string): Promise<void> {
   const current = auth.currentUser;
   if (!current) throw new Error('You must be signed in.');
@@ -92,16 +93,9 @@ export async function joinTournament(leagueId: string): Promise<void> {
   await autoGenerateBracketIfNeeded(leagueId);
 }
 
-// I retrieve all matches for a tournament and organise them into a bracket.
-// i used chatgpt to adapt the logic for generating the tournament bracket from user data https://chatgpt.com/share/6973b4c9-23c8-8007-98f1-d6533d1d01fe
-// it returns the matches sorted by round and match number, plus information about
-// how many rounds there are and which round is currently active.
-// Reference: https://firebase.google.com/docs/firestore/query-data/get-data#get_multiple_documents_from_a_collection
-// @param leagueId - The unique ID of the league/tournament
-// @returns Tournament bracket with all matches, or null if no matches exist
+// retrieve matches and organise into bracket; returns sorted by round and match number
+// ref: Firestore get multiple docs - https://firebase.google.com/docs/firestore/query-data/get-data#get_multiple_documents_from_a_collection
 export async function getTournamentBracket(leagueId: string): Promise<TournamentBracket | null> {
-  // Get all matches for this league
-  // I query the tournamentMatches collection for all matches with this leagueId
   const matchesQuery = query(
     collection(db, 'tournamentMatches'),
     where('leagueId', '==', leagueId)
@@ -136,7 +130,7 @@ export async function getTournamentBracket(leagueId: string): Promise<Tournament
   };
 }
 
-// I automatically generate brackets when tournament format is set, there are at least 2 members, and no matches exist yet.
+// auto-generate bracket when format is knockout, 2+ members, no matches yet
 export async function autoGenerateBracketIfNeeded(leagueId: string): Promise<boolean> {
   try {
     const leagueRef = doc(db, 'leagues', leagueId);
@@ -1334,7 +1328,7 @@ export async function getUserOverallStats(userId: string): Promise<{
     const matches = matchesSnap.docs.map(d => d.data() as any);
 
     // I only count verified matches (unverified scores should not affect stats).
-    // Accept both boolean true and string 'true' (Firestore/serialization can vary).
+    // Accept both boolean true and string 'true' (Firestore/serialisation can vary).
     const verifiedMatches = matches.filter(m => m.result?.winnerId && (m.result?.verified === true || m.result?.verified === 'true'));
 
     // Count wins and losses for this league

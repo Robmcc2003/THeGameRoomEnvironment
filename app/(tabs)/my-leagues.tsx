@@ -1,12 +1,13 @@
-// displaying the user's leagues with real-time Firestore listeners and allow creating new leagues and tournaments.
-// Ref: Firestore real-time listener - https://firebase.google.com/docs/firestore/query-data/listen
+// user leagues with real-time Firestore listeners; create new leagues and tournaments
+// ref: Firestore listen - https://firebase.google.com/docs/firestore/query-data/listen
+// ref: Fancy carousel - https://reactnativecomponents.com/components/walkthrough/fancy-carousel
 import { useRouter } from 'expo-router';
 import { onAuthStateChanged } from 'firebase/auth';
 import { Unsubscribe, addDoc, collection, doc, getDoc, onSnapshot as onDocSnapshot, onSnapshot, query,
   serverTimestamp, setDoc, where,
 } from 'firebase/firestore';
 import React, { useEffect, useRef, useState } from 'react';
-import { ActivityIndicator, Alert, FlatList, SafeAreaView, ScrollView, TextInput, TouchableOpacity, View as RNView,
+import { ActivityIndicator, Alert, Dimensions, FlatList, Image, SafeAreaView, ScrollView, TextInput, TouchableOpacity, View as RNView,
 } from 'react-native';
 import { auth, db } from '../../FirebaseConfig';
 import Logo from '../../components/Logo';
@@ -14,7 +15,8 @@ import { Text, View } from '../../components/Themed';
 import { styles } from '../../components/style.four';
 import { getUserProgress, autoGenerateBracketIfNeeded, generateRoundRobinFixtures, createEmptyBracketStructure } from '../../components/lib/tournaments';
 import { GameType, getAvailableGameTypes } from '../../components/lib/gameTypes';
-import { AppButton, AppCard, AppInput, useAppTheme } from '../../components/ui';
+import { uploadLeagueImage, updateLeagueImageUrl } from '../../components/lib/leagues';
+import { AppButton, AppCard, AppInput, useAppTheme, WalkthroughCarousel } from '../../components/ui';
 import { useColorScheme } from '../../components/useColorScheme';
 
 type League = { 
@@ -23,6 +25,7 @@ type League = {
   game?: string | null;
   gameType?: GameType | null;
   tournamentFormat?: 'normal_league' | 'single_elimination' | 'double_elimination' | 'round_robin' | null;
+  logoUrl?: string | null;
 };
 
 type LeagueProgress = {
@@ -53,7 +56,9 @@ export default function TabFourScreen() {
   const [myLeagues, setMyLeagues] = useState<League[]>([]);
   const [leagueProgress, setLeagueProgress] = useState<Record<string, LeagueProgress | null>>({});
   const [loadingProgress, setLoadingProgress] = useState<Record<string, boolean>>({});
-  
+  const [leagueImageBase64, setLeagueImageBase64] = useState<string | null>(null);
+
+  // store per-league listeners for cleanup
   const leagueUnsubsRef = useRef<Record<string, Unsubscribe>>({});
 
   useEffect(() => {
@@ -67,7 +72,7 @@ export default function TabFourScreen() {
       leagueUnsubsRef.current = {};
     };
 
-    // If user is not signed in, clean up and exit without generating an error
+    // no user: clean up listeners and exit
     if (!uid) {
       cleanupAllLeagueListeners();
       setMyLeagues([]);
@@ -77,20 +82,17 @@ export default function TabFourScreen() {
 
     setLoadingLeagues(true);
     
-    // Query to get all leagues where this user is a member
+    // query leagues where user is a member
     const qy = query(collection(db, 'leagueMembers'), where('userId', '==', uid));
     
-    // Real-time Membership Listener
-    // onSnapshot() listens for changes to the query results.
-    // Whenever the user joins or leaves a league, this fires.
-    // Firestore real-time listeners: https://firebase.google.com/docs/firestore/query-data/listen
+    // real-time membership listener: fires when user joins or leaves a league
     const unsubscribeMemberships = onSnapshot(
       qy,
       (snap) => {
-        // gathers all the league IDs the user is a member of
+        // gather all league IDs user is member of
         const leagueIds = snap.docs.map((d) => d.data().leagueId as string);
 
-        // If user has no leagues, clean up and exit
+        // no leagues: clean up and exit
         if (leagueIds.length === 0) {
           cleanupAllLeagueListeners();
           setMyLeagues([]);
@@ -98,34 +100,29 @@ export default function TabFourScreen() {
           return;
         }
 
-        // Remove Listeners for Leagues that the user left
-        // if a league ID is in my listeners but not in the current memberships,
-        // the user left that league. I need to stop listening to it.
+        // remove listeners for leagues user has left
         Object.keys(leagueUnsubsRef.current).forEach((id) => {
           if (!leagueIds.includes(id)) {
-            // Unsubscribe from this league's listener
+            // unsubscribe from this league
             leagueUnsubsRef.current[id]?.();
             delete leagueUnsubsRef.current[id];
           }
         });
 
-        // For each league the user is a member of, set up a real-time listener.
-        // This listener will fire whenever the league data changes.
+        // set up real-time listener for each league
         leagueIds.forEach((id) => {
-          // if I'm already listening to this league, move on
+          // skip if already listening
           if (leagueUnsubsRef.current[id]) return;
 
-          // onDocSnapshot() listens for changes to a single document.
-          // When the league is updated (name, game, etc.), this fires
-          // Firestore document listeners: https://firebase.google.com/docs/firestore/query-data/listen#listen_to_multiple_documents_in_a_collection
+          // listen for changes to league document (name, game, etc.)
           const unsub = onDocSnapshot(doc(db, 'leagues', id), (ld) => {
-            // If league was deleted, remove it from the list
+            // league deleted: remove from list
             if (!ld.exists()) {
               setMyLeagues((prev) => prev.filter((L) => L.id !== id));
               return;
             }
 
-            // Get the league data
+            // get league data
             const data = ld.data() as any;
             const updated = { 
               id: ld.id, 
@@ -133,11 +130,10 @@ export default function TabFourScreen() {
               game: data.game ?? null,
               gameType: data.gameType ?? null,
               tournamentFormat: data.tournamentFormat ?? null,
+              logoUrl: data.logoUrl ?? null,
             } as League;
 
-            // Update League in State
-            // this either merges or replaces the league in the state array.
-            // If it's new, I add it. If it exists, I update it.
+            // merge or replace league in state
             setMyLeagues((prev) => {
               const i = prev.findIndex((L) => L.id === id);
               if (i === -1) return [...prev, updated]; // Add new league
@@ -146,7 +142,7 @@ export default function TabFourScreen() {
               return copy;
             });
             
-            // Load progress for this league
+            // load progress for this league
             if (uid) {
               loadLeagueProgress(id, uid);
             }
@@ -154,7 +150,7 @@ export default function TabFourScreen() {
             setLoadingLeagues(false);
           });
 
-          // store the unsubscribe function so I can clean it up later
+          // store unsubscribe for cleanup
           leagueUnsubsRef.current[id] = unsub;
         });
       },
@@ -163,15 +159,12 @@ export default function TabFourScreen() {
       }
     );
 
-    // When the component unmounts or the effect re-runs, it needs to:
-    // 1. Stop listening to memberships
-    // 2. Stop listening to all leagues
-    // This prevents memory leaks
+    // on unmount: stop all listeners to prevent memory leaks
     return () => {
       unsubscribeMemberships();
       cleanupAllLeagueListeners();
     };
-  }, [uid]); // Re-run when user ID changes
+  }, [uid]);
 
   // load progress for a specific league
   const loadLeagueProgress = async (leagueId: string, userId: string) => {
@@ -188,12 +181,9 @@ export default function TabFourScreen() {
     }
   };
 
-  // Handle Creating a New League
-  // This function is called when the user submits the create league form.
-  // It creates a new league document in Firestore and adds the user as the owner.
-  // Firestore addDoc docs: https://firebase.google.com/docs/firestore/manage-data/add-data#add_a_document
+  // create new league on form submit, add user as owner
   const handleCreateLeague = async () => {
-    // Validate inputs
+    // validate inputs
     if (!leagueName.trim()) {
       Alert.alert('Error', 'Please enter a league name');
       return;
@@ -217,8 +207,7 @@ export default function TabFourScreen() {
         tournamentType === 'round_robin' ? 'round_robin' :
         null;
 
-      // Create new league doc in Firestore
-      // addDoc() automatically generates a unique docID to identufy different leagues
+      // create league doc (addDoc generates unique id)
       const leagueRef = await addDoc(collection(db, 'leagues'), {
         name: leagueName.trim(),
         game: game.trim() || null,
@@ -226,9 +215,20 @@ export default function TabFourScreen() {
         tournamentFormat: tournamentFormat,
         maxParticipants: maxParticipants ? parseInt(maxParticipants, 10) : null,
         ownerId: uid,
-        createdAt: serverTimestamp(), 
+        logoUrl: null,
+        createdAt: serverTimestamp(),
         updatedAt: serverTimestamp(),
       });
+
+      if (leagueImageBase64) {
+        try {
+          const logoUrl = await uploadLeagueImage(leagueRef.id, leagueImageBase64);
+          await updateLeagueImageUrl(leagueRef.id, logoUrl);
+        } catch (imgErr: any) {
+          // league created; image upload failed (non-blocking)
+          Alert.alert('League created', 'Cover image could not be uploaded. You can add one from the league page.');
+        }
+      }
 
       // get user profile for display name
       const userRef = doc(db, 'users', uid);
@@ -237,7 +237,7 @@ export default function TabFourScreen() {
       const displayName = userData?.displayName || userData?.username || auth.currentUser?.email?.split('@')[0] || 'Player';
       const username = userData?.username || null;
 
-      // add creator as a member of their league
+      // add creator as league member
       const memberId = `${leagueRef.id}_${uid}`;
       const memberRef = doc(db, 'leagueMembers', memberId);
       await setDoc(memberRef, {
@@ -252,30 +252,30 @@ export default function TabFourScreen() {
         addedBy: uid,
       });
 
-      // Initialize tournament structure based on format
-      if (tournamentFormat === 'single_elimination' || tournamentFormat === 'double_elimination') {
-        // Knockout: create empty bracket structure (visible even before members join)
+      // initialise tournament structure by format
+      if (tournamentFormat === 'single_elimination') {
+        // knockout: create empty bracket structure
         try {
           await createEmptyBracketStructure(leagueRef.id);
         } catch (err) {
-          // If empty bracket fails, try auto-generate (requires 2+ members)
+          // fallback: auto-generate if 2+ members
           try {
             await autoGenerateBracketIfNeeded(leagueRef.id);
           } catch {
-            // Ignore - bracket will generate when members join
+            // bracket will generate when members join
           }
         }
       } else if (tournamentFormat === 'round_robin') {
-        // Round robin: generate fixtures (will create when 2+ members join)
+        // round robin: generate fixtures when 2+ members
         try {
           await generateRoundRobinFixtures(leagueRef.id);
-        } catch (err) {
-          // Ignore errors (e.g. not enough members yet) - fixtures will generate when members join
+        } catch {
+          // fixtures will generate when members join
         }
       }
-      // Normal league: no initialization needed (standings calculated dynamically from matches)
+      // normal league: standings from matches
 
-      // Clear the form
+      // clear form
       setLeagueName('');
       setGame('');
       setGameType('');
@@ -284,8 +284,9 @@ export default function TabFourScreen() {
       setPointsPerWin('3');
       setPointsPerDraw('1');
       setPointsPerLoss('0');
+      setLeagueImageBase64(null);
 
-      // Navigates the user to the new league's detail page
+      // navigate to new league detail
       router.push({
         pathname: '/league/[leagueId]',
         params: { leagueId: leagueRef.id },
@@ -298,6 +299,10 @@ export default function TabFourScreen() {
   const cardBg = t.colors.card;
   const borderColor = t.colors.borderSubtle;
   const textColor = t.colors.text;
+  const screenWidth = Dimensions.get('window').width;
+  const gridPadding = 20;
+  const gridGap = 12;
+  const myLeaguesCardWidth = (screenWidth - gridPadding * 2 - gridGap) / 2;
 
   return (
     <SafeAreaView style={[styles.safeArea, { backgroundColor: t.colors.background }]}>
@@ -313,8 +318,17 @@ export default function TabFourScreen() {
             Create a tournament
           </Text>
           <Text style={{ marginTop: 6, color: t.colors.mutedText, fontWeight: '600' }}>
-            Choose your tournament format and customize the settings.
+            Choose your tournament format and customise the settings.
           </Text>
+
+          <WalkthroughCarousel
+            slides={[
+              { id: '1', icon: '📋', title: 'Name your league', description: 'Give it a clear name so friends can find it.' },
+              { id: '2', icon: '🏆', title: 'Pick a format', description: 'League, knockout bracket, or round robin.' },
+              { id: '3', icon: '⚙️', title: 'Set options', description: 'Max players, points per win/draw/loss (for leagues).' },
+              { id: '4', icon: '👥', title: 'Invite after', description: 'From the league page, invite members and start.' },
+            ]}
+          />
 
           <RNView style={{ marginTop: t.spacing.lg, gap: t.spacing.md }}>
             <AppInput
@@ -337,35 +351,15 @@ export default function TabFourScreen() {
               <Text style={{ fontSize: 14, fontWeight: '800', marginBottom: 10, color: textColor, letterSpacing: 0.2 }}>
                 Tournament type *
               </Text>
-              <RNView style={{ gap: 10 }}>
-                {[
-                  { id: 'league', name: '🏆 League', desc: 'Points-based (like Premier League). Everyone plays everyone, points determine standings.' },
-                  { id: 'knockout', name: '🥊 Knockout', desc: 'Single elimination bracket. Lose once and you\'re out. Perfect for tournaments.' },
-                  { id: 'round_robin', name: '🔄 Round Robin', desc: 'Everyone plays everyone once. Points-based standings, no elimination.' },
-                ].map((type) => {
-                  const selected = tournamentType === type.id;
-                  return (
-                    <TouchableOpacity
-                      key={type.id}
-                      onPress={() => setTournamentType(selected ? '' : type.id as any)}
-                      style={{
-                        padding: 14,
-                        borderRadius: 12,
-                        borderWidth: 2,
-                        borderColor: selected ? tint : t.colors.borderStrong,
-                        backgroundColor: selected ? (colorScheme === 'dark' ? tint + '20' : tint + '10') : t.colors.card,
-                      }}
-                    >
-                      <Text style={{ fontWeight: '800', fontSize: 16, color: selected ? tint : textColor }}>
-                        {type.name}
-                      </Text>
-                      <Text style={{ fontSize: 12, marginTop: 4, color: t.colors.mutedText, fontWeight: '600' }}>
-                        {type.desc}
-                      </Text>
-                    </TouchableOpacity>
-                  );
-                })}
-              </RNView>
+              <WalkthroughCarousel
+                slides={[
+                  { id: 'league', icon: '🏆', title: 'League', description: 'Points-based. Everyone plays everyone, points determine standings.' },
+                  { id: 'knockout', icon: '🥊', title: 'Knockout', description: 'Single elimination bracket. Lose once and you\'re out.' },
+                  { id: 'round_robin', icon: '🔄', title: 'Round Robin', description: 'Everyone plays everyone once. Points-based, no elimination.' },
+                ]}
+                selectedId={tournamentType || null}
+                onSelect={(id) => setTournamentType(prev => (prev === id ? '' : id) as 'league' | 'knockout' | 'round_robin' | '')}
+              />
             </RNView>
 
             {/* Game Type Selection */}
@@ -373,36 +367,77 @@ export default function TabFourScreen() {
               <Text style={{ fontSize: 14, fontWeight: '800', marginBottom: 10, color: textColor, letterSpacing: 0.2 }}>
                 Game type (optional)
               </Text>
-              <ScrollView horizontal showsHorizontalScrollIndicator={false}>
-                <RNView style={{ flexDirection: 'row', gap: 10, paddingBottom: 2 }}>
-                  {getAvailableGameTypes().map((config) => {
-                    const selected = gameType === config.id;
-                    return (
-                      <TouchableOpacity
-                        key={config.id}
-                        onPress={() => setGameType(selected ? '' : config.id)}
-                        style={{
-                          paddingHorizontal: 14,
-                          paddingVertical: 10,
-                          borderRadius: 999,
-                          borderWidth: 2,
-                          borderColor: selected ? tint : t.colors.borderStrong,
-                          backgroundColor: selected ? tint : t.colors.card,
-                        }}
-                      >
-                        <Text style={{ fontWeight: '800', color: selected ? '#FFFFFF' : textColor }}>
-                          {config.name}
-                        </Text>
-                      </TouchableOpacity>
-                    );
-                  })}
-                </RNView>
-              </ScrollView>
+              <WalkthroughCarousel
+                slides={[
+                  { id: '', title: 'None', description: 'No specific game type' },
+                  ...getAvailableGameTypes().map((g) => ({
+                    id: g.id,
+                    title: g.name,
+                    description: g.description,
+                  })),
+                ]}
+                selectedId={gameType || ''}
+                onSelect={(id) => setGameType(id as GameType | '')}
+              />
               {gameType ? (
                 <Text style={{ fontSize: 12, marginTop: 10, color: t.colors.mutedText, fontWeight: '600' }}>
                   {getAvailableGameTypes().find(g => g.id === gameType)?.description}
                 </Text>
               ) : null}
+            </RNView>
+
+            {/* League cover image (optional) */}
+            <RNView>
+              <Text style={{ fontSize: 14, fontWeight: '800', marginBottom: 10, color: textColor, letterSpacing: 0.2 }}>
+                League image (optional)
+              </Text>
+              <TouchableOpacity
+                  onPress={async () => {
+                  try {
+                    const ImagePicker = await import('expo-image-picker');
+                    if (typeof ImagePicker.requestMediaLibraryPermissionsAsync !== 'function') {
+                      Alert.alert('Not available', 'Image picker needs a dev build. Skip or add an image from the league page after creating.');
+                      return;
+                    }
+                    const { status } = await ImagePicker.requestMediaLibraryPermissionsAsync();
+                    if (status !== 'granted') {
+                      Alert.alert('Permission needed', 'Allow access to photos to add a league image.');
+                      return;
+                    }
+                    const result = await ImagePicker.launchImageLibraryAsync({
+                      mediaTypes: ['images'],
+                      allowsEditing: true,
+                      aspect: [16, 9],
+                      quality: 0.8,
+                      base64: true,
+                    });
+                    if (!result.canceled && result.assets[0]?.base64) {
+                      setLeagueImageBase64(result.assets[0].base64);
+                    }
+                  } catch (err: any) {
+                    if (String(err?.message || '').includes('native module') || String(err?.message || '').includes('ExponentImagePicker')) {
+                      Alert.alert('Not available', 'Image picker works on device. Skip or add an image from the league page after creating.');
+                    } else {
+                      Alert.alert('Error', err?.message ?? 'Could not open photos.');
+                    }
+                  }
+                }}
+                style={{
+                  padding: 16,
+                  borderRadius: 12,
+                  borderWidth: 2,
+                  borderColor: borderColor,
+                  backgroundColor: cardBg,
+                  alignItems: 'center',
+                }}
+              >
+                {leagueImageBase64 ? (
+                  <Image source={{ uri: `data:image/jpeg;base64,${leagueImageBase64}` }} style={{ width: '100%', height: 120, borderRadius: 8 }} resizeMode="cover" />
+                ) : null}
+                <Text style={{ marginTop: leagueImageBase64 ? 8 : 0, color: t.colors.mutedText, fontWeight: '700', fontSize: 14 }}>
+                  {leagueImageBase64 ? 'Change image' : 'Add cover image'}
+                </Text>
+              </TouchableOpacity>
             </RNView>
 
             {/* Tournament-Specific Settings */}
@@ -508,130 +543,63 @@ export default function TabFourScreen() {
         <Text style={styles.sectionTitle}>My Leagues & Progress</Text>
 
         {loadingLeagues ? (
-          <ActivityIndicator size="large" color="#DC143C" style={{ marginTop: 20 }} />
+          <ActivityIndicator size="large" color={tint} style={{ marginTop: 20 }} />
         ) : myLeagues.length === 0 ? (
           <Text style={styles.emptyText}>You haven't joined any leagues yet.</Text>
         ) : (
-          <FlatList
-            data={myLeagues}
-            keyExtractor={(item) => item.id}
-            scrollEnabled={false}
-            renderItem={({ item }) => {
+          <RNView style={styles.leagueGrid}>
+            {myLeagues.map((item) => {
               const progress = leagueProgress[item.id];
-              const isLoading = loadingProgress[item.id];
               const hasTournament = item.tournamentFormat && item.tournamentFormat !== 'normal_league';
-              
               return (
                 <TouchableOpacity
-                  style={[
-                    styles.leagueItem,
-                    {
+                  key={item.id}
+                  activeOpacity={0.85}
+                  style={[styles.leagueCard, { width: myLeaguesCardWidth }]}
+                  onPress={() => router.push({ pathname: '/league/[leagueId]', params: { leagueId: item.id } })}
+                >
+                  <View
+                    style={{
+                      backgroundColor: cardBg,
                       borderWidth: 2,
                       borderColor: progress && progress.position === 1 ? tint : borderColor,
-                      backgroundColor: cardBg,
-                      borderRadius: 16,
-                      padding: 16,
-                      marginBottom: 12,
+                      borderRadius: 14,
+                      overflow: 'hidden',
                       shadowColor: progress && progress.position === 1 ? tint : '#000000',
                       shadowOffset: { width: 0, height: 2 },
                       shadowOpacity: progress && progress.position === 1 ? 0.3 : 0.1,
                       shadowRadius: 4,
-                      elevation: progress && progress.position === 1 ? 5 : 3,
-                    }
-                  ]}
-                  onPress={() => {
-                    router.push({
-                      pathname: '/league/[leagueId]',
-                      params: { leagueId: item.id },
-                    });
-                  }}
-                >
-                  <View style={{ flexDirection: 'row', justifyContent: 'space-between', alignItems: 'flex-start', marginBottom: 8 }}>
-                    <View style={{ flex: 1 }}>
-                      <Text style={[styles.leagueName, { fontWeight: '800', fontSize: 18 }]}>{item.name}</Text>
-                      {item.game && (
-                        <Text style={[styles.leagueGame, { marginTop: 4, opacity: 0.7 }]}>{item.game}</Text>
+                      elevation: 3,
+                    }}
+                  >
+                    <RNView style={{ width: myLeaguesCardWidth - 4, height: myLeaguesCardWidth * 0.85, backgroundColor: colorScheme === 'dark' ? '#2A2A2A' : '#E8E8E8' }}>
+                      {item.logoUrl ? (
+                        <Image source={{ uri: item.logoUrl }} style={{ width: '100%', height: '100%' }} resizeMode="cover" />
+                      ) : (
+                        <RNView style={{ flex: 1, alignItems: 'center', justifyContent: 'center' }}>
+                          <Text style={{ fontSize: 32, opacity: 0.4 }}>🏆</Text>
+                        </RNView>
                       )}
+                    </RNView>
+                    <RNView style={{ padding: 10 }}>
+                      <Text style={[styles.leagueName, { fontWeight: '800', fontSize: 14 }]} numberOfLines={2}>{item.name}</Text>
                       {hasTournament && (
-                        <Text style={{ fontSize: 12, opacity: 0.6, marginTop: 4, textTransform: 'capitalize' }}>
-                          {item.tournamentFormat?.replace(/_/g, ' ')}
-                        </Text>
+                        <TouchableOpacity
+                          onPress={(e) => {
+                            e.stopPropagation();
+                            router.push({ pathname: '/league/[leagueId]/bracket', params: { leagueId: item.id } });
+                          }}
+                          style={{ marginTop: 6 }}
+                        >
+                          <Text style={{ fontSize: 11, fontWeight: '700', color: tint }}>View Bracket</Text>
+                        </TouchableOpacity>
                       )}
-                    </View>
-                    {hasTournament && (
-                      <TouchableOpacity
-                        onPress={(e) => {
-                          e.stopPropagation();
-                          router.push({
-                            pathname: '/league/[leagueId]/bracket',
-                            params: { leagueId: item.id },
-                          });
-                        }}
-                        style={{
-                          paddingHorizontal: 12,
-                          paddingVertical: 6,
-                          borderRadius: 8,
-                          backgroundColor: tint,
-                          borderWidth: 2,
-                          borderColor: '#000000',
-                        }}
-                      >
-                        <Text style={{ color: '#FFFFFF', fontWeight: '700', fontSize: 12 }}>View Bracket</Text>
-                      </TouchableOpacity>
-                    )}
+                    </RNView>
                   </View>
-                  
-                  {/* Progress Section */}
-                  {isLoading ? (
-                    <View style={{ marginTop: 12, alignItems: 'center' }}>
-                      <ActivityIndicator size="small" color={tint} />
-                    </View>
-                  ) : progress ? (
-                    <View style={{ 
-                      marginTop: 12, 
-                      paddingTop: 12, 
-                      borderTopWidth: 1, 
-                      borderTopColor: borderColor,
-                      opacity: 0.8,
-                    }}>
-                      <View style={{ flexDirection: 'row', justifyContent: 'space-between', alignItems: 'center', marginBottom: 6 }}>
-                        {progress.position !== null ? (
-                          <Text style={{ fontSize: 16, fontWeight: '800', color: progress.position === 1 ? tint : textColor }}>
-                            Rank: #{String(progress.position)}
-                          </Text>
-                        ) : (
-                          <Text style={{ fontSize: 14, fontWeight: '600', opacity: 0.7 }}>
-                            No matches yet
-                          </Text>
-                        )}
-                        {progress.totalMatches > 0 && (
-                          <Text style={{ fontSize: 14, fontWeight: '700', color: textColor }}>
-                            {String(progress.wins)}W - {String(progress.losses)}L
-                          </Text>
-                        )}
-                      </View>
-                      {progress.totalMatches > 0 && (
-                        <View style={{ flexDirection: 'row', justifyContent: 'space-between', alignItems: 'center' }}>
-                          <Text style={{ fontSize: 13, opacity: 0.7, fontWeight: '600' }}>
-                            Win Rate: {progress.winRate.toFixed(1)}%
-                          </Text>
-                          <Text style={{ fontSize: 13, opacity: 0.7, fontWeight: '600' }}>
-                            {String(progress.upcomingMatches)} upcoming • {String(progress.completedMatches)} completed
-                          </Text>
-                        </View>
-                      )}
-                    </View>
-                  ) : hasTournament ? (
-                    <View style={{ marginTop: 12, paddingTop: 12, borderTopWidth: 1, borderTopColor: borderColor }}>
-                      <Text style={{ fontSize: 13, opacity: 0.6, fontStyle: 'italic' }}>
-                        No tournament data available yet
-                      </Text>
-                    </View>
-                  ) : null}
                 </TouchableOpacity>
               );
-            }}
-          />
+            })}
+          </RNView>
         )}
       </ScrollView>
     </SafeAreaView>

@@ -1,5 +1,5 @@
-// I show the verify-email screen and require verification before allowing access to the main app.
-// Ref: Firebase Auth email verification - https://firebase.google.com/docs/auth
+// verify email screen; require verification before main app access
+// ref: Firebase Auth - https://firebase.google.com/docs/auth
 import { Stack, useRouter } from 'expo-router';
 import { sendEmailVerification, signOut as firebaseSignOut } from 'firebase/auth';
 import React, { useCallback, useEffect, useState } from 'react';
@@ -17,12 +17,14 @@ export default function VerifyEmailScreen() {
 
   const user = auth.currentUser;
 
+  // redirect if already verified
   useEffect(() => {
     if (user?.emailVerified) {
       router.replace('/(tabs)');
     }
   }, [user?.emailVerified, router]);
 
+  // reload user and check verification status
   const onCheckAgain = useCallback(async () => {
     const current = auth.currentUser;
     if (!current) {
@@ -41,6 +43,7 @@ export default function VerifyEmailScreen() {
     }
   }, [router]);
 
+  // resend verification email
   const onResend = useCallback(async () => {
     const current = auth.currentUser;
     if (!current) return;
@@ -53,6 +56,7 @@ export default function VerifyEmailScreen() {
     }
   }, []);
 
+  // sign out and go back to login
   const onSignOut = useCallback(async () => {
     try {
       await firebaseSignOut(auth);

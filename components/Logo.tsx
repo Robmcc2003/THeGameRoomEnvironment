@@ -1,5 +1,5 @@
-// display the "THE GAME ROOM" logo with a controller icon and optional tagline in small, medium, or large size.
-// Logo design base: https://chatgpt.com/share/691da1e5-7c44-8007-9135-608c82d9689c | React Native: https://reactnative.dev/docs/stylesheet
+// THE GAME ROOM logo with controller icon and optional tagline (small, medium, large)
+// ref: logo design - https://chatgpt.com/share/691da1e5-7c44-8007-9135-608c82d9689c
 import React from 'react';
 import { View, StyleSheet, Text } from 'react-native';
 
@@ -28,7 +28,7 @@ export default function Logo({ size = 'medium', showTagline = true }: LogoProps)
       <View style={styles.logoContainer}>
         <Text style={[styles.topText, { fontSize }]}>THE GAME ROOM</Text>
 
-        {/* I build the controller from nested Views: handles, body, d-pad, centre buttons, action buttons. */}
+        {/* controller built from nested views: handles, body, d-pad, centre and action buttons */}
         <View style={[styles.controllerContainer, { width: controllerSize, height: controllerHeight }]}>
           <View style={styles.controller}>
             <View style={[

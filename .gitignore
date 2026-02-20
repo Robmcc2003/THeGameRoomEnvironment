@@ -1,4 +1,4 @@
-# Learn more https://docs.github.com/en/get-started/getting-started-with-git/ignoring-files
+# ref https://docs.github.com/en/get-started/getting-started-with-git/ignoring-files
 
 # Node / Expo
 node_modules/

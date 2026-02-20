@@ -1,5 +1,5 @@
-// I display the in-app notifications inbox from Firestore with pull-to-refresh and mark-as-read.
-// Ref: Array filter - https://www.w3schools.com/jsref/jsref_filter.asp
+// notifications inbox from Firestore with pull-to-refresh and mark-as-read
+// ref: Array filter - https://www.w3schools.com/jsref/jsref_filter.asp
 import { Stack, useRouter } from 'expo-router';
 import React, { useEffect, useMemo, useState } from 'react';
 import { ActivityIndicator, FlatList, RefreshControl, SafeAreaView, TouchableOpacity, View as RNView } from 'react-native';
@@ -19,8 +19,10 @@ export default function NotificationsScreen() {
   const [items, setItems] = useState<AppNotification[]>([]);
   const [loadError, setLoadError] = useState<string | null>(null);
 
+  // count unread for badge
   const unreadCount = useMemo(() => items.filter((n) => !n.readAt).length, [items]);
 
+  // fetch notifications for current user, fallback to client sort if index missing
   const load = async () => {
     if (!uid) {
       setItems([]);
@@ -34,7 +36,7 @@ export default function NotificationsScreen() {
       setLoadError(null);
       let snap;
       try {
-        // Preferred (ordered) query — may require a composite index.
+        // preferred ordered query (may need composite index)
         snap = await getDocs(
           query(
             collection(db, NOTIFICATIONS_COLLECTION),
@@ -54,7 +56,7 @@ export default function NotificationsScreen() {
           throw e;
         }
 
-        // Fallback: no composite index required. I sort client-side.
+        // fallback: no composite index, sort client-side
         snap = await getDocs(
           query(
             collection(db, NOTIFICATIONS_COLLECTION),
@@ -80,7 +82,7 @@ export default function NotificationsScreen() {
         };
       });
 
-      // If the fallback query was used, I sort by createdAt client-side.
+      // sort by createdAt client-side if fallback query used
       rows.sort((a, b) => {
         const aMs = (a.createdAt?.toMillis?.() ?? 0) as number;
         const bMs = (b.createdAt?.toMillis?.() ?? 0) as number;
@@ -102,11 +104,13 @@ export default function NotificationsScreen() {
     // eslint-disable-next-line react-hooks/exhaustive-deps
   }, [uid]);
 
+  // pull to refresh
   const onRefresh = () => {
     setRefreshing(true);
     load();
   };
 
+  // mark as read and navigate to league if linked
   const onOpen = async (n: AppNotification) => {
     if (!n.readAt) {
       await markNotificationRead(n.id);

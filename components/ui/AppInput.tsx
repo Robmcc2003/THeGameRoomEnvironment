@@ -10,7 +10,7 @@ type Props = TextInputProps & {
   error?: string;
 };
 
-// I render a consistent input with optional label/hint/error.
+// consistent input with optional label, hint and error
 export function AppInput({ label, hint, error, containerStyle, style, ...rest }: Props) {
   const t = useAppTheme();
   const showError = !!error?.trim();

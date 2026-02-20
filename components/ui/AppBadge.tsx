@@ -9,7 +9,7 @@ type Props = {
   style?: ViewStyle | ViewStyle[];
 };
 
-// I render a small badge/pill for status labels.
+// small badge/pill for status labels
 export function AppBadge({ text, tone = 'neutral', style }: Props) {
   const t = useAppTheme();
 

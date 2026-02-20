@@ -1,7 +1,6 @@
-// Sign Out Tab Screen
-// I handle user sign out and navigation back to login.
-/* Sign out functionality (lines 31-61) from Firebase Auth - https://firebase.google.com/docs/reference/js/auth#signout */
-// Ref: React useState - https://www.w3schools.com/react/react_usestate.asp
+// sign out tab: handle sign out and navigate back to login
+// cant get this to boot the person back to sign in page. Must come back to it
+// ref: Firebase Auth signOut - https://firebase.google.com/docs/reference/js/auth#signout
 
 import { useRouter } from 'expo-router';
 import { signOut as firebaseSignOut } from 'firebase/auth';
@@ -16,6 +15,7 @@ export default function TabOneScreen() {
   const t = useAppTheme();
   const [isSigningOut, setIsSigningOut] = React.useState(false);
 
+  // confirm then sign out and navigate to login
   const handleSignOut = async () => {
     if (isSigningOut) {
       return;

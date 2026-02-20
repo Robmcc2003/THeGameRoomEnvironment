@@ -10,7 +10,7 @@ type Props = {
   variant?: 'default' | 'soft';
 };
 
-// I render a consistent card surface across the app.
+// consistent card surface across app
 export function AppCard({ children, style, padded = true, variant = 'default' }: Props) {
   const t = useAppTheme();
   const bg =

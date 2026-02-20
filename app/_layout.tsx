@@ -1,9 +1,9 @@
-// Root Layout File
-// handle app-wide navigation, authentication state, theme, fonts, and splash screen.
-/* Navigation structure (lines 11-109) adapted from Expo Router documentation - https://docs.expo.dev/router/introduction/ */
-/* Font loading code (lines 37-40) from Expo Fonts guide - https://docs.expo.dev/guides/using-custom-fonts/ */
-/* Splash screen handling (lines 32, 46-50) from Expo Splash Screen guide - https://docs.expo.dev/guides/splash-screens/ */
-/* Authentication state listener (lines 68-85) adapted from Firebase Auth docs - https://firebase.google.com/docs/auth/web/manage-users#get_the_currently_signed-in_user */
+// root layout: app-wide navigation, auth state, theme, fonts and splash screen
+// ref: Expo Router - https://docs.expo.dev/router/introduction/
+// ref: Fonts - https://docs.expo.dev/guides/using-custom-fonts/
+// ref: Splash - https://docs.expo.dev/guides/splash-screens/
+// ref: Firebase Auth - https://firebase.google.com/docs/auth/web/manage-users#get_the_currently_signed-in_user
+// ref: React Nav Theme - https://reactnavigation.org/docs/themes
 
 import FontAwesome from '@expo/vector-icons/FontAwesome';
 import { DarkTheme, DefaultTheme, ThemeProvider } from '@react-navigation/native';
@@ -19,22 +19,19 @@ import { auth } from '../FirebaseConfig';
 import * as Notifications from 'expo-notifications';
 import { listenForLatestUnreadNotification, registerNotificationsForCurrentUser } from '../components/lib/notifications';
 
-// I export the error boundary to catch navigation errors.
-// Reference: https://react.dev/reference/react/Component#catching-rendering-errors-with-an-error-boundary
+// error boundary to catch navigation errors
+// ref: https://react.dev/reference/react/Component#catching-rendering-errors-with-an-error-boundary
 export { ErrorBoundary } from 'expo-router';
 
-// I set the initial route to the login screen.
-// Reference: https://docs.expo.dev/router/advanced/stack/
+// initial route is login screen
 export const unstable_settings = {
   initialRouteName: 'index',
 };
 
-// I prevent the splash screen from auto-hiding so I can control when it disappears.
-// Reference: https://docs.expo.dev/guides/splash-screens/
+// prevent splash from auto-hiding so we control when it disappears
 SplashScreen.preventAutoHideAsync();
 
-// I load fonts and manage the splash screen.
-// Reference: https://docs.expo.dev/guides/using-custom-fonts/
+// load fonts and manage splash screen
 export default function RootLayout() {
   const [loaded, error] = useFonts({
     SpaceMono: require('../assets/fonts/SpaceMono-Regular.ttf'),
@@ -55,11 +52,11 @@ export default function RootLayout() {
     return null;
   }
 
+  // render nav once fonts ready
   return <RootLayoutNav />;
 }
 
-// handle routing and authentication state.
-// Reference: https://firebase.google.com/docs/auth/web/manage-users#get_the_currently_signed-in_user
+// handle routing and auth state
 function RootLayoutNav() {
   const colorScheme = useColorScheme();
   const router = useRouter();
@@ -68,7 +65,7 @@ function RootLayoutNav() {
   const [user, setUser] = useState(auth.currentUser);
 
   useEffect(() => {
-    // I only subscribe once so I do not create navigation loops.
+    // subscribe once to avoid navigation loops
     const unsubscribe = onAuthStateChanged(auth, (currentUser) => {
       setUser(currentUser);
     });
@@ -77,12 +74,12 @@ function RootLayoutNav() {
   }, []);
 
   useEffect(() => {
-    // I keep routing logic separate from the auth subscription.
+    // routing logic separate from auth subscription
     const inTabs = segments[0] === '(tabs)';
     const onVerifyScreen = pathname === '/verify-email';
     const onLoginScreen = !inTabs && (pathname === '/' || pathname === '/index' || !pathname);
 
-    // Not signed in -> always go to login if currently in tabs or verify screen.
+    // not signed in -> go to login if in tabs or verify screen
     if (!user) {
       if (inTabs || onVerifyScreen) {
         router.replace('/');
@@ -90,7 +87,7 @@ function RootLayoutNav() {
       return;
     }
 
-    // Signed in but not verified -> keep on verify screen.
+    // signed in but not verified -> keep on verify screen
     if (!user.emailVerified) {
       if (!onVerifyScreen) {
         router.replace('/verify-email');
@@ -98,13 +95,13 @@ function RootLayoutNav() {
       return;
     }
 
-    // Signed in and verified -> keep inside the main app.
+    // signed in and verified -> stay in main app
     if (onLoginScreen || onVerifyScreen) {
       router.replace('/(tabs)');
     }
   }, [user?.uid, user?.emailVerified, segments, pathname, router]);
 
-  // I register notification permissions and listen for new in-app notifications.
+  // register notification permissions and listen for in-app notifications
   useEffect(() => {
     if (!user?.uid) return;
 
@@ -116,7 +113,7 @@ function RootLayoutNav() {
       unsub = listenForLatestUnreadNotification({
         userId: user.uid,
         onNotification: async (n) => {
-          // I show a local alert while the app is running (Expo Go-friendly).
+          // show local alert whilst app is running (Expo Go friendly)
           await Notifications.scheduleNotificationAsync({
             content: {
               title: n.title,

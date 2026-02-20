@@ -1,4 +1,4 @@
-// I let league owners/admins add a member by email (add directly or send an invite).
+// league owners/admins add member by email (add directly or send invite)
 import React, { useState } from 'react';
 import { View, Text, TextInput, Pressable, ActivityIndicator, Alert } from 'react-native';
 import { useLocalSearchParams, useRouter } from 'expo-router';
@@ -15,7 +15,7 @@ export default function AddMemberScreen() {
   const [busy, setBusy] = useState(false);
   const router = useRouter();
 
-  // I validate the email and add the member or create an invite
+  // validate email and add member or create invite if the member doesn't exist yet
   const onAdd = async () => {
     const e = email.trim().toLowerCase();
 

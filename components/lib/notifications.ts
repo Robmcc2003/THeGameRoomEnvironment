@@ -1,4 +1,4 @@
-// I handle in-app notifications: Firestore collection, registration, and listening for new notifications; I use Expo Notifications for display.
+// in-app notifications: Firestore collection, registration, listening; Expo Notifications for display
 import { auth, db } from '../../FirebaseConfig';
 import Constants from 'expo-constants';
 import * as Notifications from 'expo-notifications';
@@ -17,8 +17,7 @@ import {
   where,
 } from 'firebase/firestore';
 
-// IMPORTANT: Firestore collection names are case-sensitive.
-// I use "Notifications" (capital N) to match your created composite index.
+// collection name case-sensitive; capital N to match composite index
 export const NOTIFICATIONS_COLLECTION = 'Notifications' as const;
 
 export type AppNotification = {
@@ -34,12 +33,14 @@ export type AppNotification = {
   data?: Record<string, any> | null;
 };
 
-// I configure how notifications display while the app is open.
+// configure how notifications display whilst app is open
 Notifications.setNotificationHandler({
   handleNotification: async () => ({
     shouldShowAlert: true,
     shouldPlaySound: false,
     shouldSetBadge: false,
+    shouldShowBanner: true,
+    shouldShowList: true,
   }),
 });
 
@@ -52,8 +53,7 @@ function getExpoProjectId(): string | null {
   );
 }
 
-// I request notification permissions and (optionally) register an Expo push token.
-// Note: in Expo Go, remote push is limited; local notifications + in-app inbox still work.
+// request notification permissions and optionally register push token; Expo Go has limited remote push
 export async function registerNotificationsForCurrentUser(): Promise<{ token?: string | null }> {
   const current = auth.currentUser;
   if (!current) return { token: null };
@@ -75,7 +75,7 @@ export async function registerNotificationsForCurrentUser(): Promise<{ token?: s
     return { token: null };
   }
 
-  // Expo push token may fail in simulators/Expo Go. I treat it as optional.
+  // push token may fail in simulators/Expo Go; treat as optional
   let token: string | null = null;
   try {
     token = (await Notifications.getExpoPushTokenAsync({ projectId })).data;
@@ -218,13 +218,13 @@ export function listenForLatestUnreadNotification(opts: {
     ready = false;
     return onSnapshot(
       qy,
-      (snap) => {
+      (snap: { docChanges: () => Array<{ type: string; doc: { id: string; data: () => Record<string, unknown> } }> }) => {
         if (!ready) {
           ready = true;
           return;
         }
 
-        const change = snap.docChanges().find((c) => c.type === 'added');
+        const change = snap.docChanges().find((c: { type: string }) => c.type === 'added');
         if (!change) return;
 
         const data = change.doc.data() as any;
@@ -244,8 +244,8 @@ export function listenForLatestUnreadNotification(opts: {
           data: data.data ?? null,
         });
       },
-      (error) => {
-        // If Firestore says an index is required, I fall back to the simpler listener so the app keeps running.
+      (error: unknown) => {
+        // if Firestore says index required, fall back to simpler listener
         const msg = String((error as any)?.message ?? '');
         const code = String((error as any)?.code ?? '');
         const needsIndex =

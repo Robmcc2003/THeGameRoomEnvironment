@@ -1,18 +1,21 @@
-// I handle login, sign-up, password reset, and profile creation. I redirect verified users into the app.
-// Auth: https://firebase.google.com/docs/auth | Profile creation: https://firebase.google.com/docs/firestore
-// Ref: JavaScript async/await - https://www.w3schools.com/js/js_async.asp
+// login, sign-up, password reset and profile creation; redirect verified users into app
+// ref: Firebase Auth - https://firebase.google.com/docs/auth
+// ref: Firestore - https://firebase.google.com/docs/firestore
+// ref: Fancy login UI - https://reactnativecomponents.com/components/login/fancy-login
 
 import { router } from 'expo-router'
 import { createUserWithEmailAndPassword, onAuthStateChanged, sendEmailVerification, sendPasswordResetEmail, signInWithEmailAndPassword } from 'firebase/auth'
 import { doc, getDoc, serverTimestamp, setDoc } from 'firebase/firestore'
 import React, { useEffect, useState } from 'react'
-import { ActivityIndicator, SafeAreaView, ScrollView, StyleSheet, Text, TouchableOpacity, View } from 'react-native'
+import { ActivityIndicator, KeyboardAvoidingView, Platform, ScrollView, StyleSheet, Text, TouchableOpacity, View } from 'react-native'
+import { SafeAreaView as SafeAreaViewContext, useSafeAreaInsets } from 'react-native-safe-area-context'
 import { auth, db } from '../FirebaseConfig'
 import Logo from '../components/Logo'
 import { AppButton, AppInput, useAppTheme } from '../components/ui'
 
 const index = () => {
   const t = useAppTheme();
+  const insets = useSafeAreaInsets();
   const [email, setEmail] = useState('');
   const [password, setPassword] = useState('');
   const [username, setUsername] = useState('');
@@ -26,7 +29,7 @@ const index = () => {
   useEffect(() => {
     const unsubscribe = onAuthStateChanged(auth, (user) => {
       if (user) {
-        // I require email verification before allowing access to the main app.
+        // require email verification before main app access
         if (!user.emailVerified) {
           router.replace('/verify-email');
         } else {
@@ -39,6 +42,7 @@ const index = () => {
     return () => unsubscribe();
   }, []);
 
+  // validate email format
   const isValidEmail = (value: string) => /^[^\s@]+@[^\s@]+\.[^\s@]+$/.test(value.trim());
 
   const signIn = async () => {
@@ -52,7 +56,7 @@ const index = () => {
       const userCredential = await signInWithEmailAndPassword(auth, email, password);
       
       if (userCredential.user) {
-        // If email is not verified, I keep them out of the main app.
+        // keep unverified users out of main app
         if (!userCredential.user.emailVerified) {
           router.replace('/verify-email');
           return;
@@ -61,6 +65,7 @@ const index = () => {
         const userRef = doc(db, 'users', userCredential.user.uid);
         const userSnap = await getDoc(userRef);
         
+        // sync user doc with search fields for find friends
         const existing = userSnap.exists() ? (userSnap.data() as any) : null;
         const emailUsername = email.split('@')[0];
         const usernameValue = (existing?.username || emailUsername).trim();
@@ -93,8 +98,7 @@ const index = () => {
     }
   }
 
-  // I always create normal user accounts here.
-  // If you need admins, set that server-side (custom claims) or manually in Firebase Console.
+  // create normal user accounts; admins set via custom claims or Firebase Console
   const createUserProfile = async (userId: string, email: string, username: string) => {
     const userRef = doc(db, 'users', userId);
     const userSnap = await getDoc(userRef);
@@ -126,7 +130,7 @@ const index = () => {
       const snapshot = await getDocs(usersQuery);
       if (!snapshot.empty) return false;
 
-      // I fall back to the legacy field for older user documents.
+      // fallback to legacy field for older user documents
       const legacyQuery = query(collection(db, 'users'), where('username', '==', username.trim()));
       const legacySnap = await getDocs(legacyQuery);
       return legacySnap.empty;
@@ -171,7 +175,7 @@ const index = () => {
       return;
     }
 
-    // I enforce a slightly stronger password requirement for better security.
+    // enforce stronger password for security
     if (password.length < 8) {
       alert('Password must be at least 8 characters');
       return;
@@ -201,7 +205,7 @@ const index = () => {
       if (userCredential.user) {
         await createUserProfile(userCredential.user.uid, email, usernameTrimmed);
 
-        // I send an email verification link and send the user to the verification screen.
+        // send verification email and navigate to verify screen
         try {
           await sendEmailVerification(userCredential.user);
         } catch {
@@ -216,6 +220,7 @@ const index = () => {
     }
   }
 
+  // send password reset email
   const onForgotPassword = async () => {
     const emailTrimmed = email.trim();
     if (!emailTrimmed) {
@@ -238,35 +243,87 @@ const index = () => {
     }
   };
 
+  const isDark = t.scheme === 'dark';
+  const tint = t.colors.tint;
+
   if (loading) {
     return (
-      <SafeAreaView style={[styles.container, { backgroundColor: t.colors.background }]}>
+      <SafeAreaViewContext style={[styles.container, { backgroundColor: t.colors.background }]}>
         <View style={styles.loadingContainer}>
           <Logo size="large" showTagline={true} />
-          <ActivityIndicator size="large" color="#DC143C" style={{ marginTop: 30 }} />
-          <Text style={[styles.title, { marginTop: 20 }]}>Loading...</Text>
+          <ActivityIndicator size="large" color={tint} style={{ marginTop: 30 }} />
+          <Text style={[styles.loadingTitle, { color: t.colors.text }]}>Loading...</Text>
         </View>
-      </SafeAreaView>
+      </SafeAreaViewContext>
     );
   }
 
   return (
-    <SafeAreaView style={[styles.container, { backgroundColor: t.colors.background }]}>
-      <ScrollView 
-        contentContainerStyle={styles.scrollContent}
-        keyboardShouldPersistTaps="handled"
-        showsVerticalScrollIndicator={false}
+    <SafeAreaViewContext
+      style={[styles.container, { backgroundColor: t.colors.background }]}
+      edges={['left', 'right', 'bottom']}
+    >
+      <KeyboardAvoidingView
+        style={styles.keyboardView}
+        behavior={Platform.OS === 'ios' ? 'padding' : undefined}
+        keyboardVerticalOffset={Platform.OS === 'ios' ? 0 : 0}
       >
-        <View style={styles.logoSection}>
-          <Logo size="large" showTagline={true} />
+        {/* Bottom lightsaber-style red glow: extends into safe area to remove white strip */}
+        <View
+          style={[
+            styles.glowContainer,
+            {
+              bottom: -insets.bottom,
+              height: 160 + insets.bottom,
+            },
+          ]}
+          pointerEvents="none"
+        >
+          <View style={[styles.glowLayer, styles.glowLayerFar, { backgroundColor: tint + '12' }]} />
+          <View style={[styles.glowLayer, styles.glowLayerMid, { backgroundColor: tint + '18' }]} />
+          <View style={[styles.glowLayer, styles.glowLayerNear, { backgroundColor: tint + '18' }]} />
         </View>
-        
-        <View style={styles.formSection}>
-          <Text style={styles.title}>{isSignUp ? 'Create Account' : 'Welcome Back'}</Text>
-          <Text style={styles.subtitle}>{isSignUp ? 'Sign up to get started' : 'Sign in to continue'}</Text>
-          
-          {isSignUp && (
-            <>
+
+        <ScrollView
+          contentContainerStyle={styles.scrollContent}
+          keyboardShouldPersistTaps="handled"
+          showsVerticalScrollIndicator={false}
+        >
+          {/* Fancy header: logo + tint accent, extends to top of screen (no top safe inset) */}
+          <View
+            style={[
+              styles.headerStrip,
+              {
+                backgroundColor: isDark ? tint + '28' : tint + '18',
+                paddingTop: 24 + insets.top,
+              },
+            ]}
+          >
+            <View style={styles.logoSection}>
+              <Logo size="large" showTagline={true} />
+            </View>
+          </View>
+
+          {/* Form card */}
+          <View
+            style={[
+              styles.formCard,
+              {
+                backgroundColor: t.colors.card,
+                borderColor: t.colors.borderStrong,
+                ...t.shadow.card,
+                borderRadius: t.radius.lg,
+              },
+            ]}
+          >
+            <Text style={[styles.title, { color: t.colors.text }]}>
+              {isSignUp ? 'Create Account' : 'Welcome Back'}
+            </Text>
+            <Text style={[styles.subtitle, { color: t.colors.mutedText }]}>
+              {isSignUp ? 'Sign up to get started' : 'Sign in to continue'}
+            </Text>
+
+            {isSignUp && (
               <AppInput
                 label="Username"
                 value={username}
@@ -275,96 +332,131 @@ const index = () => {
                 placeholder="username"
                 maxLength={20}
               />
-            </>
-          )}
-          
-          <AppInput
-            label="Email"
-            value={email}
-            onChangeText={setEmail}
-            autoCapitalize="none"
-            keyboardType="email-address"
-            placeholder="email"
-          />
-          
-          <AppInput
-            label="Password"
-            value={password}
-            onChangeText={setPassword}
-            secureTextEntry={!passwordVisible}
-            autoCapitalize="none"
-            placeholder="password"
-          />
+            )}
 
-          <TouchableOpacity
-            onPress={() => setPasswordVisible(v => !v)}
-            style={{ width: '100%', marginTop: 8 }}
-          >
-            <Text style={{ color: '#666666', fontSize: 14, fontWeight: '700', textDecorationLine: 'underline' }}>
-              {passwordVisible ? 'Hide password' : 'Show password'}
-            </Text>
-          </TouchableOpacity>
-          
-          {!isSignUp && (
-            <AppButton
-              title="Login"
-              onPress={signIn}
-              loading={signingIn}
-              disabled={signingIn || signingUp}
-              style={{ marginTop: 8 }}
+            <AppInput
+              label="Email"
+              value={email}
+              onChangeText={setEmail}
+              autoCapitalize="none"
+              keyboardType="email-address"
+              placeholder="email"
             />
-          )}
 
-          {!isSignUp && (
+            <AppInput
+              label="Password"
+              value={password}
+              onChangeText={setPassword}
+              secureTextEntry={!passwordVisible}
+              autoCapitalize="none"
+              placeholder="password"
+            />
+
             <TouchableOpacity
-              onPress={onForgotPassword}
-              disabled={resettingPassword || signingIn}
-              style={{ width: '100%', marginTop: 14 }}
+              onPress={() => setPasswordVisible(v => !v)}
+              style={styles.linkRow}
             >
-              <Text style={{ color: '#666666', fontSize: 14, fontWeight: '700', textDecorationLine: 'underline' }}>
-                {resettingPassword ? 'Sending reset email…' : 'Forgot password?'}
+              <Text style={[styles.linkText, { color: t.colors.mutedText }]}>
+                {passwordVisible ? 'Hide password' : 'Show password'}
               </Text>
             </TouchableOpacity>
-          )}
-          
-          {isSignUp && (
-            <AppButton
-              title="Create Account"
-              onPress={signUp}
-              loading={signingUp}
-              disabled={signingIn || signingUp}
-              style={{ marginTop: 8 }}
-            />
-          )}
-          
-          <TouchableOpacity 
-            onPress={() => {
-              setIsSignUp(!isSignUp);
-              setUsername('');
-              setPasswordVisible(false);
-            }}
-            style={styles.toggleButton}
-          >
-            <Text style={styles.toggleText}>
-              {isSignUp ? 'Already have an account? Sign in' : "Don't have an account? Sign up"}
-            </Text>
-          </TouchableOpacity>
-        </View>
-      </ScrollView>
-    </SafeAreaView>
+
+            {!isSignUp && (
+              <AppButton
+                title="Sign in"
+                onPress={signIn}
+                loading={signingIn}
+                disabled={signingIn || signingUp}
+                style={styles.primaryButton}
+              />
+            )}
+
+            {!isSignUp && (
+              <TouchableOpacity
+                onPress={onForgotPassword}
+                disabled={resettingPassword || signingIn}
+                style={styles.linkRow}
+              >
+                <Text style={[styles.linkText, { color: t.colors.mutedText }]}>
+                  {resettingPassword ? 'Sending reset email…' : 'Forgot password?'}
+                </Text>
+              </TouchableOpacity>
+            )}
+
+            {isSignUp && (
+              <AppButton
+                title="Create Account"
+                onPress={signUp}
+                loading={signingUp}
+                disabled={signingIn || signingUp}
+                style={styles.primaryButton}
+              />
+            )}
+
+            <TouchableOpacity
+              onPress={() => {
+                setIsSignUp(!isSignUp);
+                setUsername('');
+                setPasswordVisible(false);
+              }}
+              style={styles.toggleButton}
+            >
+              <Text style={[styles.toggleText, { color: t.colors.mutedText }]}>
+                {isSignUp ? 'Already have an account? ' : "Don't have an account? "}
+                <Text style={{ color: tint, fontWeight: '800', textDecorationLine: 'underline' }}>
+                  {isSignUp ? 'Sign in' : 'Sign up'}
+                </Text>
+              </Text>
+            </TouchableOpacity>
+          </View>
+        </ScrollView>
+      </KeyboardAvoidingView>
+    </SafeAreaViewContext>
   )
 }
 
 export default index
 
+// login screen styles
 const styles = StyleSheet.create({
   container: {
     flex: 1,
-    backgroundColor: '#FFFFFF',
+  },
+  keyboardView: {
+    flex: 1,
+  },
+  glowContainer: {
+    position: 'absolute',
+    left: 0,
+    right: 0,
+    alignItems: 'center',
+    justifyContent: 'flex-end',
+  },
+  glowLayer: {
+    position: 'absolute',
+    left: 0,
+    right: 0,
+    bottom: 0,
+  },
+  glowLayerNear: {
+    height: 56,
+    borderTopLeftRadius: 999,
+    borderTopRightRadius: 999,
+  },
+  glowLayerMid: {
+    height: 100,
+    borderTopLeftRadius: 999,
+    borderTopRightRadius: 999,
+  },
+  glowLayerFar: {
+    height: 160,
+    borderTopLeftRadius: 999,
+    borderTopRightRadius: 999,
   },
   scrollContent: {
     flexGrow: 1,
     paddingBottom: 40,
+    paddingHorizontal: 20,
   },
   loadingContainer: {
     flex: 1,
@@ -372,116 +464,60 @@ const styles = StyleSheet.create({
     alignItems: 'center',
     padding: 20,
   },
-  logoSection: {
-    paddingTop: 40,
-    paddingBottom: 20,
-    alignItems: 'center',
-    borderBottomWidth: 2,
-    borderBottomColor: '#000000',
-    marginBottom: 30,
-    marginHorizontal: 20,
+  loadingTitle: {
+    fontSize: 18,
+    fontWeight: '700',
+    marginTop: 20,
   },
-  formSection: {
+  headerStrip: {
+    paddingTop: 24,
+    paddingBottom: 36,
+    marginHorizontal: -20,
+    marginBottom: 24,
     paddingHorizontal: 20,
     alignItems: 'center',
+    borderBottomLeftRadius: 32,
+    borderBottomRightRadius: 32,
+  },
+  logoSection: {
+    alignItems: 'center',
+  },
+  formCard: {
+    padding: 24,
+    borderWidth: 2,
   },
   title: {
-    fontSize: 32,
+    fontSize: 28,
     fontWeight: '900',
-    marginBottom: 8,
-    color: '#000000',
+    marginBottom: 6,
     letterSpacing: 0.5,
   },
   subtitle: {
-    fontSize: 16,
-    color: '#666666',
-    marginBottom: 32,
-    fontWeight: '500',
+    fontSize: 15,
+    marginBottom: 24,
+    fontWeight: '600',
   },
-  textInput: {
-    height: 56,
+  linkRow: {
     width: '100%',
-    backgroundColor: '#FFFFFF',
-    borderColor: '#000000',
-    borderWidth: 2,
-    borderRadius: 12,
-    marginVertical: 12,
-    paddingHorizontal: 20,
-    fontSize: 16,
-    color: '#000000',
-    fontWeight: '500',
+    marginTop: 10,
+    paddingVertical: 4,
   },
-  button: {
-    width: '100%',
-    marginVertical: 10,
-    backgroundColor: '#DC143C',
-    padding: 18,
-    borderRadius: 12,
-    alignItems: 'center',
-    justifyContent: 'center',
-    shadowColor: '#DC143C',
-    shadowOffset: { width: 0, height: 4 },
-    shadowOpacity: 0.3,
-    shadowRadius: 8,
-    elevation: 5,
-    borderWidth: 2,
-    borderColor: '#000000',
-  },
-  buttonDisabled: {
-    opacity: 0.6,
-  },
-  text: {
-    color: '#FFFFFF',
-    fontSize: 18,
+  linkText: {
+    fontSize: 14,
     fontWeight: '700',
-    letterSpacing: 0.5,
+    textDecorationLine: 'underline',
+  },
+  primaryButton: {
+    marginTop: 12,
   },
   toggleButton: {
-    marginTop: 20,
-    paddingVertical: 12,
+    marginTop: 24,
+    paddingVertical: 8,
+    alignItems: 'center',
   },
   toggleText: {
-    color: '#666666',
     fontSize: 14,
     fontWeight: '600',
     textDecorationLine: 'underline',
   },
-  roleContainer: {
-    width: '100%',
-    marginVertical: 12,
-  },
-  roleLabel: {
-    fontSize: 16,
-    fontWeight: '700',
-    color: '#000000',
-    marginBottom: 12,
-  },
-  roleButtons: {
-    flexDirection: 'row',
-    gap: 12,
-  },
-  roleButton: {
-    flex: 1,
-    paddingVertical: 14,
-    paddingHorizontal: 16,
-    borderRadius: 12,
-    borderWidth: 2,
-    borderColor: '#000000',
-    backgroundColor: '#FFFFFF',
-    alignItems: 'center',
-    justifyContent: 'center',
-  },
-  roleButtonActive: {
-    backgroundColor: '#DC143C',
-    borderColor: '#DC143C',
-  },
-  roleButtonText: {
-    fontSize: 16,
-    fontWeight: '600',
-    color: '#000000',
-  },
-  roleButtonTextActive: {
-    color: '#FFFFFF',
-    fontWeight: '700',
-  }
 });

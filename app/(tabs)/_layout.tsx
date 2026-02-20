@@ -1,37 +1,49 @@
-// I define the bottom tab bar with four tabs: Sign Out, Home, Profile, and My Leagues.
+// bottom tab bar: sign out, home, profile, my leagues with custom sliding indicator based on the airbnb feel
+// ref: Airbnb tabs - https://reactnativecomponents.com/components/tabs/airbnb-tabs
 import FontAwesome from '@expo/vector-icons/FontAwesome';
 import { Tabs } from 'expo-router';
 import React from 'react';
+import { Easing } from 'react-native';
 import { useColorScheme } from '../../components/useColorScheme';
 import Colors from '../../constants/Colors';
+import { AnimatedTabBar } from '../../components/ui/AnimatedTabBar';
 
-// I render a single tab bar icon using FontAwesome.
+// render tab icon from FontAwesome
 function TabBarIcon(props: {
   name: React.ComponentProps<typeof FontAwesome>['name'];
   color: string;
 }) {
-  return <FontAwesome size={28} style={{ marginBottom: -3 }} {...props} />;
+  return <FontAwesome size={26} style={{ marginBottom: 2 }} {...props} />;
 }
 
-// I render the main tab layout and wire up each tab screen.
 export default function TabLayout() {
   const colorScheme = useColorScheme();
 
   return (
     <Tabs
       initialRouteName="sign-out"
+      tabBar={(props) => <AnimatedTabBar {...(props as any)} />}
       screenOptions={{
         tabBarActiveTintColor: Colors[colorScheme ?? 'light'].tint,
         headerShown: false,
+        // match tab bar pill timing: 500ms atm, but might tweak it
+        animation: 'fade',
+        transitionSpec: {
+          animation: 'timing',
+          config: {
+            duration: 500,
+            easing: Easing.inOut(Easing.cubic),
+          },
+        },
       }}>
-      {/* Hidden index route - only used for /(tabs) navigation, not shown in tab bar */}
+      {/* hidden index route for /(tabs) navigation, not in tab bar */}
       <Tabs.Screen
         name="index"
         options={{
           href: null, // Hide from tab bar
         }}
       />
-      {/* Tab 1: Sign Out screen */}
+      {/* sign out tab */}
       <Tabs.Screen
         name="sign-out"
         options={{
@@ -40,7 +52,7 @@ export default function TabLayout() {
         }}
       />
       
-      {/* Tab 2: Home screen - Explore leagues */}
+      {/* home tab: explore leagues */}
       <Tabs.Screen
         name="home"
         options={{
@@ -49,7 +61,7 @@ export default function TabLayout() {
         }}
       />
       
-      {/* Tab 3: Profile screen - User stats and tournament history */}
+      {/* profile tab: stats and tournament history */}
       <Tabs.Screen
         name="profile"
         options={{
@@ -58,7 +70,7 @@ export default function TabLayout() {
         }}
       />
       
-      {/* Tab 4: My Leagues screen - Create and manage leagues */}
+      {/* my leagues tab: create and manage leagues */}
       <Tabs.Screen
         name="my-leagues"
         options={{

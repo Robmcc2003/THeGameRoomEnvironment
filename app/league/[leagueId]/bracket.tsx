@@ -1,5 +1,7 @@
-// I display the tournament bracket and standings; I support score entry and admin verification. Bracket styling ref: https://chatgpt.com/share/691dab97-d050-8007-9ba3-69de17a2cc4c
-// Ref: Date toLocaleDateString - https://www.w3schools.com/jsref/jsref_tolocaledatestring.asp
+// tournament bracket and standings; score entry and admin verif
+// ref: Date toLocaleDateString - https://www.w3schools.com/jsref/jsref_tolocaledatestring.asp
+// ref: Bracket visualisation - https://chatgpt.com/share/691dab97-d050-8007-9ba3-69de17a2cc4c
+// ref: Cloud Vision API Understanding: https://chatgpt.com/share/69983db7-2f0c-8007-ba9c-5c97e6a15761
 import { useLocalSearchParams, useRouter } from 'expo-router';
 import { Stack } from 'expo-router/stack';
 import { collection, doc, getDoc, getDocs, query, where } from 'firebase/firestore';
@@ -12,6 +14,7 @@ import { GameType, getGameConfig } from '../../../components/lib/gameTypes';
 import { autoGenerateBracketIfNeeded, getTournamentBracket, getTournamentStandings, Match, updateMatchScore, verifyMatchScore } from '../../../components/lib/tournaments';
 import { useColorScheme } from '../../../components/useColorScheme';
 import Colors from '../../../constants/Colors';
+import { parseScoreFromImage } from '../../../components/lib/scoreFromImage';
 
 type LeagueDoc = {
   name: string;
@@ -30,7 +33,7 @@ export default function TournamentBracketScreen() {
     (Array.isArray((params as any).leagueID) ? (params as any).leagueID[0] : ((params as any).leagueID as string | undefined));
 
   const router = useRouter();
-  // I get theme colours for light and dark mode
+  // theme colours for light and dark mode
   const colorScheme = useColorScheme() ?? 'light';
   const palette = Colors[colorScheme];
   const tint = palette.tint;
@@ -52,6 +55,7 @@ export default function TournamentBracketScreen() {
   const [player1Scores, setPlayer1Scores] = useState<Record<string, string>>({});
   const [player2Scores, setPlayer2Scores] = useState<Record<string, string>>({});
   const [savingScore, setSavingScore] = useState(false);
+  const [parsingPhoto, setParsingPhoto] = useState(false);
   const [isAdmin, setIsAdmin] = useState(false);
 
   const uid = auth.currentUser?.uid ?? null;
@@ -91,12 +95,12 @@ export default function TournamentBracketScreen() {
       const leagueData = snap.data() as LeagueDoc;
       setLeague(leagueData);
       
-      // check if the user is an owner, league admin, or system admin
+      // check owner, league admin or system admin
       if (uid) {
         const isOwner = leagueData.ownerId === uid;
         const isLeagueAdmin = Array.isArray((leagueData as any).admins) && (leagueData as any).admins.includes(uid);
         
-        // I check if the user is a system admin
+        // check if user is system admin
         const userRef = doc(db, 'users', uid);
         const userSnap = await getDoc(userRef);
         const userData = userSnap.exists() ? userSnap.data() : null;
@@ -108,7 +112,7 @@ export default function TournamentBracketScreen() {
     }
   }, [leagueId, router, uid]);
 
-  // load all active members and create a map for quick name lookups
+  // load active members and create name lookup map
   const loadMembers = useCallback(async () => {
     if (!leagueId) return;
     try {
@@ -131,13 +135,13 @@ export default function TournamentBracketScreen() {
     }
   }, [leagueId]);
 
-  // I load the bracket and standings, auto-generating brackets if needs be
+  // load bracket and standings, auto-generate if needed
   const loadBracket = useCallback(async () => {
     if (!leagueId) { setLoading(false); setRefreshing(false); return; }
     try {
       setLoading(true);
       
-      // I auto-generate brackets if needed before loading to ensure the bracket tab is always useful
+      // auto-generate brackets if needed before loading
       await autoGenerateBracketIfNeeded(leagueId);
       
       const [bracketData, standingsData] = await Promise.all([
@@ -312,6 +316,54 @@ export default function TournamentBracketScreen() {
       await loadBracket(); // Reload bracket to show verified scores
     } catch (error: any) {
       Alert.alert('Error', error.message || 'Failed to verify match score.');
+    }
+  };
+
+  // Submit photo of score: pick image, call Cloud Function (Vision API for score parsing; not league images), pre-fill scores for user to confirm.
+  // ref: Expo Image Picker - https://docs.expo.dev/versions/latest/sdk/imagepicker/
+  // ref: Google could vision api - https://cloud.google.com/vision/docs/ocr#vision_text_detection-javascript
+  const handleSubmitPhotoOfScore = async () => {
+    if (!selectedMatch || !league) return;
+    const gameConfig = getGameConfig(league.gameType);
+    try {
+      const ImagePicker = await import('expo-image-picker');
+      if (typeof ImagePicker.requestMediaLibraryPermissionsAsync !== 'function') {
+        Alert.alert('Not available', 'Image picker needs a dev build. Enter scores manually.');
+        return;
+      }
+      const { status } = await ImagePicker.requestMediaLibraryPermissionsAsync();
+      if (status !== 'granted') {
+        Alert.alert('Permission needed', 'Allow access to your photos to submit a score image.');
+        return;
+      }
+      const result = await ImagePicker.launchImageLibraryAsync({
+        mediaTypes: ['images'],
+        allowsEditing: true,
+        aspect: [4, 3],
+        quality: 0.8,
+        base64: true,
+      });
+      if (result.canceled || !result.assets?.[0]?.base64) return;
+      setParsingPhoto(true);
+      const parsed = await parseScoreFromImage(result.assets[0].base64);
+      if (parsed.success) {
+        if (gameConfig.id === 'GENERIC') {
+          setPlayer1Score(String(parsed.player1Score));
+          setPlayer2Score(String(parsed.player2Score));
+        } else {
+          // Game-specific (FIFA, Madden, etc.): map the two numbers to the first score field (e.g. Goals)
+          const primaryFieldId = gameConfig.scoringFields[0]?.id ?? 'score';
+          setPlayer1Scores((prev) => ({ ...prev, [primaryFieldId]: String(parsed.player1Score) }));
+          setPlayer2Scores((prev) => ({ ...prev, [primaryFieldId]: String(parsed.player2Score) }));
+        }
+        Alert.alert('Scores detected', `Suggested: ${parsed.player1Score} - ${parsed.player2Score}. Check and tap Save Score if correct.`);
+      } else {
+        Alert.alert('Could not read scores', parsed.error);
+      }
+    } catch (err: any) {
+      Alert.alert('Error', err?.message ?? 'Failed to read score from photo.');
+    } finally {
+      setParsingPhoto(false);
     }
   };
 
@@ -1230,9 +1282,34 @@ export default function TournamentBracketScreen() {
                   const isGameSpecific = gameConfig.id !== 'GENERIC';
                   
                   if (isGameSpecific) {
-                    // Render game-specific scoring fields
+                    // Render game-specific scoring fields (FIFA, Madden, etc.) with photo option
                     return (
                       <>
+                        <TouchableOpacity
+                          onPress={handleSubmitPhotoOfScore}
+                          disabled={parsingPhoto}
+                          style={{
+                            marginBottom: 16,
+                            paddingVertical: 12,
+                            paddingHorizontal: 16,
+                            borderRadius: 10,
+                            borderWidth: 2,
+                            borderColor: tint,
+                            backgroundColor: colorScheme === 'dark' ? 'rgba(220,20,60,0.12)' : 'rgba(220,20,60,0.08)',
+                            flexDirection: 'row',
+                            alignItems: 'center',
+                            justifyContent: 'center',
+                            gap: 8,
+                          }}
+                        >
+                          {parsingPhoto ? (
+                            <ActivityIndicator size="small" color={tint} />
+                          ) : (
+                            <Text style={{ fontSize: 15, fontWeight: '700', color: tint }}>
+                              Submit photo of score
+                            </Text>
+                          )}
+                        </TouchableOpacity>
                         <Text style={{
                           fontSize: 16,
                           fontWeight: '800',
@@ -1337,6 +1414,31 @@ export default function TournamentBracketScreen() {
                     // Render legacy numeric score inputs
                     return (
                       <>
+                        <TouchableOpacity
+                          onPress={handleSubmitPhotoOfScore}
+                          disabled={parsingPhoto}
+                          style={{
+                            marginBottom: 16,
+                            paddingVertical: 12,
+                            paddingHorizontal: 16,
+                            borderRadius: 10,
+                            borderWidth: 2,
+                            borderColor: tint,
+                            backgroundColor: colorScheme === 'dark' ? 'rgba(220,20,60,0.12)' : 'rgba(220,20,60,0.08)',
+                            flexDirection: 'row',
+                            alignItems: 'center',
+                            justifyContent: 'center',
+                            gap: 8,
+                          }}
+                        >
+                          {parsingPhoto ? (
+                            <ActivityIndicator size="small" color={tint} />
+                          ) : (
+                            <Text style={{ fontSize: 15, fontWeight: '700', color: tint }}>
+                              Submit photo of score
+                            </Text>
+                          )}
+                        </TouchableOpacity>
                         <RNView style={{ marginBottom: 16 }}>
                           <Text style={{
                             fontSize: 16,

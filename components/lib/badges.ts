@@ -1,5 +1,5 @@
-// I define achievement badges, award them from matches/tournaments, and read/write earned badges in Firestore.
-// Ref: Badge UI generation - https://chatgpt.com/share/69862ad5-9300-8007-9d95-100d9c6fc6b9
+// achievement badges: define, award from matches/tournaments, read/write in Firestore
+// ref: Badge UI - https://chatgpt.com/share/69862ad5-9300-8007-9d95-100d9c6fc6b9
 import { auth, db } from '../../FirebaseConfig';
 import {
   collection,
@@ -167,10 +167,6 @@ export const BADGES: readonly BadgeDefinition[] = [
     icon: 'bullseye',
   },
 ] as const;
-
-export function getBadgeDefinition(id: string): BadgeDefinition | undefined {
-  return BADGES.find(b => b.id === id);
-}
 
 export async function getUserEarnedBadges(userId: string): Promise<Record<string, EarnedBadge>> {
   const snap = await getDocs(collection(db, 'users', userId, 'badges'));

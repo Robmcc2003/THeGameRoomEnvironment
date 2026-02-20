@@ -1,2 +1,2 @@
-// I re-export the React Native useColorScheme hook so the app can use 'light' | 'dark' consistently.
+// re-export useColorScheme for consistent light/dark usage
 export { useColorScheme } from 'react-native';

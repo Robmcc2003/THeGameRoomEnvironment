@@ -1,12 +1,12 @@
-// display the league group chat and let members send and receive messages in real time.
-// Ref: League chat UI - https://chatgpt.com/share/698628e4-3c08-8007-a920-17997d00bfde
-// Ref: React useState - https://www.w3schools.com/react/react_usestate.asp
+// league group chat; real-time send and receive messages
+// ref: League chat UI - https://chatgpt.com/share/698628e4-3c08-8007-a920-17997d00bfde
 import { useLocalSearchParams, useRouter, Stack } from 'expo-router';
 import { onAuthStateChanged } from 'firebase/auth';
 import React, { useEffect, useState, useRef } from 'react';
 import {
   ActivityIndicator,
   Alert,
+  Image,
   KeyboardAvoidingView,
   Platform,
   SafeAreaView,
@@ -19,6 +19,7 @@ import {
 } from 'react-native';
 import { auth } from '../../../FirebaseConfig';
 import { sendLeagueMessage, subscribeToLeagueMessages, type ChatMessage } from '../../../components/lib/chat';
+import { getProfileImageUrl } from '../../../components/lib/avatars';
 import { Timestamp } from 'firebase/firestore';
 import { useColorScheme } from '../../../components/useColorScheme';
 import Colors from '../../../constants/Colors';
@@ -49,6 +50,7 @@ export default function LeagueChatScreen() {
     return () => unsub();
   }, []);
 
+  // subscribe to messages, scroll to bottom when new ones arrive
   useEffect(() => {
     if (!leagueId) {
       setLoading(false);
@@ -68,6 +70,7 @@ export default function LeagueChatScreen() {
     return () => unsubscribe();
   }, [leagueId]);
 
+  // send message and clear input
   const handleSend = async () => {
     if (!leagueId || !messageText.trim() || sending) return;
 
@@ -86,6 +89,7 @@ export default function LeagueChatScreen() {
     }
   };
 
+  // format relative time (just now, 5m ago, 2h ago, or date)
   const formatTime = (date: Date | Timestamp) => {
     try {
       const d = date instanceof Date ? date : (date as any).toDate ? (date as any).toDate() : new Date();
@@ -159,15 +163,49 @@ export default function LeagueChatScreen() {
                         ]}
                       >
                         <View
-                          style={[
-                            styles.messageBubble,
-                            {
-                              backgroundColor: isOwn ? tint : cardBg,
-                              borderColor: isOwn ? tint : borderColor,
-                              borderWidth: isOwn ? 0 : 2,
-                            },
-                          ]}
+                          style={{
+                            flexDirection: 'row',
+                            alignItems: 'flex-end',
+                            justifyContent: isOwn ? 'flex-end' : 'flex-start',
+                            gap: 8,
+                            width: '100%',
+                          }}
                         >
+                          {!isOwn && (
+                            <>
+                              {getProfileImageUrl(msg) ? (
+                                <Image
+                                  source={{ uri: getProfileImageUrl(msg)! }}
+                                  style={{ width: 28, height: 28, borderRadius: 14, backgroundColor: borderColor }}
+                                />
+                              ) : (
+                                <View
+                                  style={{
+                                    width: 28,
+                                    height: 28,
+                                    borderRadius: 14,
+                                    backgroundColor: tint + '40',
+                                    alignItems: 'center',
+                                    justifyContent: 'center',
+                                  }}
+                                >
+                                  <Text style={{ fontWeight: '800', fontSize: 12, color: tint }}>
+                                    {(msg.displayName?.[0] || '?').toUpperCase()}
+                                  </Text>
+                                </View>
+                              )}
+                            </>
+                          )}
+                          <View
+                            style={[
+                              styles.messageBubble,
+                              {
+                                backgroundColor: isOwn ? tint : cardBg,
+                                borderColor: isOwn ? tint : borderColor,
+                                borderWidth: isOwn ? 0 : 2,
+                              },
+                            ]}
+                          >
                           {!isOwn && (
                             <Text
                               style={[
@@ -195,6 +233,7 @@ export default function LeagueChatScreen() {
                           >
                             {formatTime(msg.createdAt)}
                           </Text>
+                        </View>
                         </View>
                       </View>
                     );

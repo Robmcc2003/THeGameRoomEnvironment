@@ -7,7 +7,7 @@ A React Native (Expo) mobile app for running tournament leagues, brackets, and p
 - **Firebase**: Authentication (email/password, email verification), **Firestore** (users, leagues, members, invites, matches, notifications, chat)
 - **TypeScript**
 
-### Prerequs
+### Prerequisites
 - Node.js
 - Expo CLI (or use `npx expo`)
 - A Firebase project with Authentication (Email/Password) and Firestore enabled

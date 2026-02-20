@@ -1,12 +1,12 @@
-// I render a single achievement badge tile (icon, title, rarity, locked state) and show the description in an alert when pressed.
-// Ref: Badge UI generation - https://chatgpt.com/share/69862ad5-9300-8007-9d95-100d9c6fc6b9
+// single achievement badge tile: icon, title, rarity, locked state; tap shows description in alert
+// ref: Badge UI - https://chatgpt.com/share/69862ad5-9300-8007-9d95-100d9c6fc6b9
 import FontAwesome from '@expo/vector-icons/FontAwesome';
 import React, { useMemo } from 'react';
 import { View, Text, Pressable, Alert } from 'react-native';
 import { useAppTheme } from './theme';
 import type { BadgeRarity } from '../lib/badges';
 
-// I map badge rarity to border/fill/glow colours.
+// map badge rarity to border/fill/glow colours
 function rarityColors(rarity: BadgeRarity) {
   switch (rarity) {
     case 'gold':

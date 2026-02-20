@@ -13,7 +13,7 @@ type Props = PressableProps & {
   textStyle?: TextStyle | TextStyle[];
 };
 
-// I render a consistent button while keeping the existing colour scheme.
+// consistent button with theme colours
 export function AppButton({ title, variant = 'primary', loading, disabled, style, textStyle, ...rest }: Props) {
   const t = useAppTheme();
   const isDisabled = !!disabled || !!loading;

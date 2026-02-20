@@ -1,14 +1,15 @@
-// I display a public user profile: stats, tournament history, and earned badges.
-// Ref: Date toLocaleDateString - https://www.w3schools.com/jsref/jsref_tolocaledatestring.asp
+// public user profile: stats, tournament history, earned badges
+// ref: Date toLocaleDateString - https://www.w3schools.com/jsref/jsref_tolocaledatestring.asp
 import { Stack, useLocalSearchParams, useRouter } from 'expo-router';
 import React, { useCallback, useEffect, useMemo, useState } from 'react';
-import { ActivityIndicator, FlatList, RefreshControl, SafeAreaView, ScrollView, TouchableOpacity, View as RNView } from 'react-native';
+import { ActivityIndicator, FlatList, Image, RefreshControl, SafeAreaView, ScrollView, TouchableOpacity, View as RNView } from 'react-native';
 import Logo from '../../components/Logo';
 import { Text } from '../../components/Themed';
 import { getPublicUserSummary } from '../../components/lib/users';
 import { getUserGameSpecificStats, getUserOverallStats, getUserTournamentHistory } from '../../components/lib/tournaments';
 import { AppBadge, AppCard, AchievementBadgeTile, useAppTheme } from '../../components/ui';
 import { BADGES, getUserEarnedBadges } from '../../components/lib/badges';
+import { getProfileImageUrl } from '../../components/lib/avatars';
 
 type TournamentHistoryItem = {
   leagueId: string;
@@ -32,7 +33,12 @@ export default function PublicUserProfileScreen() {
 
   const [loading, setLoading] = useState(true);
   const [refreshing, setRefreshing] = useState(false);
-  const [profile, setProfile] = useState<{ displayName?: string | null; username?: string | null } | null>(null);
+  const [profile, setProfile] = useState<{
+    displayName?: string | null;
+    username?: string | null;
+    photoURL?: string | null;
+    avatarId?: string | null;
+  } | null>(null);
   const [stats, setStats] = useState<any | null>(null);
   const [history, setHistory] = useState<TournamentHistoryItem[]>([]);
   const [shooterStats, setShooterStats] = useState<Record<string, number>>({});
@@ -54,7 +60,16 @@ export default function PublicUserProfileScreen() {
         getUserEarnedBadges(id),
       ]);
 
-      setProfile(summary ? { displayName: summary.displayName, username: summary.username } : null);
+      setProfile(
+        summary
+          ? {
+              displayName: summary.displayName,
+              username: summary.username,
+              photoURL: summary.photoURL,
+              avatarId: summary.avatarId,
+            }
+          : null
+      );
       setStats(overall);
       setHistory(hist as any);
       setShooterStats(cod || {});
@@ -142,6 +157,36 @@ export default function PublicUserProfileScreen() {
           ) : (
             <>
               <AppCard>
+                <RNView style={{ alignItems: 'center', marginBottom: 12 }}>
+                  {getProfileImageUrl(profile) ? (
+                    <Image
+                      source={{ uri: getProfileImageUrl(profile)! }}
+                      style={{
+                        width: 80,
+                        height: 80,
+                        borderRadius: 40,
+                        backgroundColor: t.colors.card,
+                        borderWidth: 2,
+                        borderColor: t.colors.borderStrong,
+                      }}
+                    />
+                  ) : (
+                    <RNView
+                      style={{
+                        width: 80,
+                        height: 80,
+                        borderRadius: 40,
+                        backgroundColor: t.colors.borderStrong,
+                        alignItems: 'center',
+                        justifyContent: 'center',
+                      }}
+                    >
+                      <Text style={{ fontWeight: '900', fontSize: 32, color: t.colors.mutedText }}>
+                        {(profile.displayName || '?')[0].toUpperCase()}
+                      </Text>
+                    </RNView>
+                  )}
+                </RNView>
                 <Text style={{ fontSize: 24, fontWeight: '900', letterSpacing: 0.3 }}>{profile.displayName || 'Player'}</Text>
                 {profile.username ? (
                   <Text style={{ marginTop: 6, color: t.colors.mutedText, fontWeight: '800' }}>@{profile.username}</Text>

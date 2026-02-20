@@ -46,7 +46,7 @@ export type AppTheme = {
   };
 };
 
-// I return shared design tokens while keeping the existing colour scheme.
+// shared design tokens following current colour scheme
 export function useAppTheme(): AppTheme {
   const scheme = (useColorScheme() ?? 'light') as 'light' | 'dark';
   const palette = Colors[scheme];

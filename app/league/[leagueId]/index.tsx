@@ -1,17 +1,17 @@
-// display league detail: info, members, invites. I let owners/admins manage members and settings and navigate to bracket, chat, and edit.
-// Ref: Firestore get data - https://firebase.google.com/docs/firestore/query-data/get-data
+// league detail: info, members, invites; owners/admins manage members and settings; nav to bracket, chat, edit
+// ref: Firestore get data - https://firebase.google.com/docs/firestore/query-data/get-data
 import { useLocalSearchParams, useNavigation, useRouter } from 'expo-router';
 import { Stack } from 'expo-router/stack';
 import { doc, getDoc } from 'firebase/firestore';
 import React, { useCallback, useEffect, useMemo, useState } from 'react';
 import {
-  ActivityIndicator, Alert, FlatList, Image, ListRenderItem, Share, View as RNView, TouchableOpacity,
+  ActivityIndicator, Alert, FlatList, Image, ListRenderItem, Share, View as RNView, TouchableOpacity, Text as RNText,
 } from 'react-native';
 import * as Linking from 'expo-linking';
 import { auth, db } from '../../../FirebaseConfig';
 import Logo from '../../../components/Logo';
 import { Text, View } from '../../../components/Themed';
-import { deleteLeague } from '../../../components/lib/leagues';
+import { deleteLeague, uploadLeagueImage, updateLeagueImageUrl } from '../../../components/lib/leagues';
 import {
   cancelInvite, listInvites, listMembers, removeMember, resendInvite, setMemberRole,
 } from '../../../components/lib/members';
@@ -21,6 +21,7 @@ import { useColorScheme } from '../../../components/useColorScheme';
 import Colors from '../../../constants/Colors';
 import { GameType, getGameConfig } from '../../../components/lib/gameTypes';
 import { AppBadge, AppCard } from '../../../components/ui';
+import { getProfileImageUrl } from '../../../components/lib/avatars';
 
 type LeagueDoc = {
   name: string;
@@ -53,6 +54,7 @@ type MemberRow = {
   status?: 'active' | 'invited' | 'pending';
   displayName?: string | null;
   photoURL?: string | null;
+  avatarId?: string | null;
 };
 
 type InviteRow = {
@@ -69,7 +71,7 @@ type Row =
   | ({ kind: 'member' } & MemberRow)
   | ({ kind: 'invite' } & InviteRow);
 export default function LeagueDetailScreen() {
-  // I get the league ID from the route parameters
+  // league id from route params
   const params = useLocalSearchParams();
   const leagueId =
     (Array.isArray(params.leagueId) ? params.leagueId[0] : (params.leagueId as string | undefined)) ??
@@ -78,7 +80,7 @@ export default function LeagueDetailScreen() {
   const router = useRouter();
   const navigation = useNavigation();
   
-  // I handle navigation back, falling back to the My Leagues tab if there's no history
+  // handle back, fallback to my leagues tab if no history
   const handleBack = useCallback(() => {
     if (router.canGoBack()) {
       router.back();
@@ -87,7 +89,7 @@ export default function LeagueDetailScreen() {
     }
   }, [router]);
 
-  // Theme colors for light/dark mode
+  // theme colours for light/dark mode
   const colorScheme = useColorScheme() ?? 'light';
   const palette = Colors[colorScheme];
   const tint = palette.tint;
@@ -95,17 +97,17 @@ export default function LeagueDetailScreen() {
   const borderColor = palette.border ?? (colorScheme === 'dark' ? '#2A2D2F' : '#E6E6E6');
   const textColor = palette.text ?? '#1F1F1F';
 
-  // Component state
-  const [loadingLeague, setLoadingLeague] = useState(true); // Loading state for fetching league data
-  const [league, setLeague] = useState<LeagueDoc | null>(null); // Current league data
-  const [loadingList, setLoadingList] = useState(true); // Loading state for fetching members/invites
-  const [refreshing, setRefreshing] = useState(false); // Loading state for pull-to-refresh
-  const [rows, setRows] = useState<Row[]>([]); // Combined list of members and invites
-  const [actioningId, setActioningId] = useState<string | null>(null); // ID of item currently being acted upon
-  const [hasMatches, setHasMatches] = useState<boolean>(false); // Whether matches already exist
-  const [checkingMatches, setCheckingMatches] = useState<boolean>(false); // Loading state for checking matches
+  // component state
+  const [loadingLeague, setLoadingLeague] = useState(true);
+  const [league, setLeague] = useState<LeagueDoc | null>(null);
+  const [loadingList, setLoadingList] = useState(true);
+  const [refreshing, setRefreshing] = useState(false);
+  const [rows, setRows] = useState<Row[]>([]);
+  const [actioningId, setActioningId] = useState<string | null>(null);
+  const [hasMatches, setHasMatches] = useState<boolean>(false);
+  const [checkingMatches, setCheckingMatches] = useState<boolean>(false);
 
-  // I check the current user's permissions and membership status
+  // current user permissions and membership
   const uid = auth.currentUser?.uid ?? null;
   const isOwner = !!(uid && league?.ownerId && String(uid) === String(league.ownerId));
   const isAdmin = !!(uid && league?.admins && Array.isArray(league.admins) && league.admins.includes(uid));
@@ -113,6 +115,7 @@ export default function LeagueDetailScreen() {
   const isMember = !!(uid && rows.some(r => r.kind === 'member' && (r as MemberRow).userId === uid));
 
   const [deleting, setDeleting] = useState(false);
+  const [uploadingImage, setUploadingImage] = useState(false);
 
   // I handle league deletion with a confirmation dialog
   const onDeleteLeague = useCallback(() => {
@@ -343,8 +346,8 @@ export default function LeagueDetailScreen() {
         { text: 'Cancel', style: 'cancel' },
         {
           text: 'Send',
-          onPress: async (text) => {
-            const message = (text ?? '').trim();
+          onPress: async (input?: string) => {
+            const message = (input ?? '').trim();
             if (!message) return;
             try {
               setActioningId('notify');
@@ -480,8 +483,62 @@ export default function LeagueDetailScreen() {
           <Logo size="small" showTagline={false} />
         </RNView>
         
-        {/* Header card */}
+        {/* Header card with optional cover image */}
         <AppCard>
+          {(league.logoUrl || canManageMembers) ? (
+            <RNView style={{ marginBottom: 16, borderRadius: 12, overflow: 'hidden', backgroundColor: colorScheme === 'dark' ? '#1C1C1E' : '#E8E8E8', minHeight: 120 }}>
+              {league.logoUrl ? (
+                <Image key={league.logoUrl} source={{ uri: league.logoUrl }} style={{ width: '100%', height: 160 }} resizeMode="cover" />
+              ) : (
+                <RNView style={{ width: '100%', height: 120, alignItems: 'center', justifyContent: 'center' }}>
+                  <Text style={{ fontSize: 32, opacity: 0.4 }}>🏆</Text>
+                </RNView>
+              )}
+              {canManageMembers && (
+                <TouchableOpacity
+                  onPress={async () => {
+                    if (!leagueId) return;
+                    try {
+                      const ImagePicker = await import('expo-image-picker');
+                      if (typeof ImagePicker.requestMediaLibraryPermissionsAsync !== 'function') {
+                        Alert.alert('Not available', 'Image picker needs a dev build. Try again on a device.');
+                        return;
+                      }
+                      const { status } = await ImagePicker.requestMediaLibraryPermissionsAsync();
+                      if (status !== 'granted') {
+                        Alert.alert('Permission needed', 'Allow access to photos to change the league image.');
+                        return;
+                      }
+                      const result = await ImagePicker.launchImageLibraryAsync({
+                        mediaTypes: ['images'],
+                        allowsEditing: true,
+                        aspect: [16, 9],
+                        quality: 0.8,
+                        base64: true,
+                      });
+                      if (result.canceled || !result.assets[0]?.base64) {
+                        if (!result.canceled) Alert.alert('Error', 'Could not get image data. Try another photo.');
+                        return;
+                      }
+                      setUploadingImage(true);
+                      const logoUrl = await uploadLeagueImage(leagueId, result.assets[0].base64);
+                      await updateLeagueImageUrl(leagueId, logoUrl);
+                      setLeague(prev => prev ? { ...prev, logoUrl } : null);
+                      Alert.alert('Done', 'League image updated.');
+                    } catch (err: any) {
+                      Alert.alert('Error', err?.message ?? 'Failed to update league image.');
+                    } finally {
+                      setUploadingImage(false);
+                    }
+                  }}
+                  disabled={uploadingImage}
+                  style={{ position: 'absolute', bottom: 8, right: 8, paddingHorizontal: 12, paddingVertical: 8, borderRadius: 8, backgroundColor: tint, borderWidth: 2, borderColor: '#000000' }}
+                >
+                  <RNText style={{ color: '#FFFFFF', fontWeight: '700', fontSize: 12 }}>{uploadingImage ? 'Uploading...' : 'Change image'}</RNText>
+                </TouchableOpacity>
+              )}
+            </RNView>
+          ) : null}
           <Text style={{ fontSize: 28, fontWeight: '900', letterSpacing: 0.5 }}>{league.name}</Text>
           {league.game ? <Text style={{ marginTop: 6, opacity: 0.7, fontSize: 16, fontWeight: '600' }}>{league.game}</Text> : null}
           {league.gameType && (
@@ -900,10 +957,12 @@ export default function LeagueDetailScreen() {
       return (
         <RNView style={{ paddingHorizontal: 20 }}>
           <View style={{ flexDirection: 'row', alignItems: 'center', gap: 12, padding: 16, borderWidth: 2, borderColor, borderRadius: 16, backgroundColor: cardBg, shadowColor: '#000000', shadowOffset: { width: 0, height: 2 }, shadowOpacity: 0.1, shadowRadius: 4, elevation: 3 }}>
-            {item.photoURL ? (
-              <Image source={{ uri: item.photoURL }} style={{ width: 36, height: 36, borderRadius: 18 }} />
+            {getProfileImageUrl(item) ? (
+              <Image source={{ uri: getProfileImageUrl(item)! }} style={{ width: 36, height: 36, borderRadius: 18 }} />
             ) : (
-              <View style={{ width: 36, height: 36, borderRadius: 18, backgroundColor: '#ddd' }} />
+              <View style={{ width: 36, height: 36, borderRadius: 18, backgroundColor: '#ddd', alignItems: 'center', justifyContent: 'center' }}>
+                <Text style={{ fontWeight: '800', fontSize: 14, color: '#666' }}>{(item.displayName ?? item.userId)?.[0]?.toUpperCase() ?? '?'}</Text>
+              </View>
             )}
             <View style={{ flex: 1 }}>
               <Text style={{ fontWeight: '600' }}>{item.displayName ?? item.userId}</Text>

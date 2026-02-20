@@ -1,6 +1,4 @@
 # The Game Room Environment — References
-This document lists **all references, attributions, and documentation links** used in the project. For a short project overview and how to run the app, see [README.md](./README.md).
-
 ## Project summary
 A React Native mobile app for managing tournament leagues, brackets, and player statistics.
 
@@ -23,15 +21,38 @@ Tournament-related functions:
 - `getUserTournamentHistory()` - Tournament history
 
 ### `components/lib/leagues.ts`
-League creation, updates, and deletion.
+League creation, updates, deletion, and cover image upload (via Cloud Function to Firebase Storage, not Vision API).
 ### `components/lib/members.ts`
 League member management, invites, and role assignments.
+
+### `components/lib/scoreFromImage.ts`
+Calls Cloud Function to parse scores from a scoreboard photo (Vision API only; league images use Storage). HTTP endpoint with Bearer token.
+
+### `components/lib/avatars.ts`
+Profile avatars (Bottts Neutral style via DiceBear):
+- `AVATAR_OPTIONS` – 36 predefined options, gaming-themed
+- `getAvatarImageUrl(avatarId)` – image URL for an avatar id
+- `getProfileImageUrl(user)` – best profile image (photoURL or avatar)
+
+### `components/ui/AvatarPicker.tsx`
+Modal picker for choosing a profile avatar; used on the Profile tab
+
+### `components/ui/AnimatedTabBar.tsx`
+Custom bottom tab bar (Airbnb-style): sliding pill indicator, semi-transparent bar, ease-in-out cubic animation. Used via `tabBar` prop in the tabs layout
+
+### `app/(tabs)/_layout.tsx`
+Tabs layout: four tabs (Sign Out, Home, Profile, My Leagues), custom `tabBar` (above), and screen transition
+
+### `components/ui/WalkthroughCarousel.tsx`
+Compact horizontal carousel with dot indicators; used on the create-league section (My Leagues) to show short tips (name, format, options, invite), different game choices, etc.
 
 ## Database Structure
 ### Collections
 #### `users`
 - `userId` (document ID)
 - `email`, `username`, `displayName`
+- `avatarId` (optional; DiceBear Bots Neutral seed for profile avatar)
+- `photoURL` (optional; custom profile photo URL)
 - `role` ('user' or 'admin')
 - `createdAt`, `updatedAt`
 
@@ -41,13 +62,14 @@ League member management, invites, and role assignments.
 - `tournamentFormat` ('single_elimination', 'double_elimination', 'round_robin', 'normal_league')
 - `maxParticipants`, `description`
 - `startDate`, `endDate`
+- `logoUrl` (optional; Firebase Storage URL for league cover image, set by admins)
 
 #### `leagueMembers`
 - `memberId` (document ID): `${leagueId}_${userId}`
 - `leagueId`, `userId`
 - `role` ('member' or 'admin')
 - `status` ('active', 'invited', 'pending')
-- `displayName`, `username`
+- `displayName`, `username`, `photoURL`, `avatarId` (copied from user when added)
 - `joinedAt`
 
 #### `tournamentMatches`
@@ -71,17 +93,17 @@ League member management, invites, and role assignments.
 - **System Admins**: Verify scores in any league
 
 ## Refs
-### Firebase Configuration
+### Firebase Config
 - **Source**: YouTube Tutorial (2022)
 - **URL**: https://youtu.be/a0KJ7l5sNGw?si=caznuBD8jCD2er9v
 - **Location**: `FirebaseConfig.ts` (lines 1-37)
-- **Description**: Firebase initialization, authentication setup, and Firestore configuration
+- **Description**: Firebase initialisation, authentication setup, and Firestore configuration
 
 ### Firebase Analytics
 - **Source**: Firebase Analytics Documentation
 - **URL**: https://firebase.google.com/docs/analytics/get-started
 - **Location**: `FirebaseConfig.ts` (lines 2, 23-35)
-- **Description**: Firebase Analytics initialization and platform support checking
+- **Description**: Firebase Analytics initialisation and platform support checking
 
 ### Navigation and App Structure
 - **Source**: Expo Router Documentation
@@ -89,7 +111,7 @@ League member management, invites, and role assignments.
 - **Location**: `app/_layout.tsx` (lines 3, 11-109)
 - **Description**: Navigation structure and routing setup
 
-### React Navigation Theme
+### React Nav Theme
 - **Source**: React Navigation Documentation
 - **URL**: https://reactnavigation.org/docs/themes
 - **Location**: `app/_layout.tsx` (line 9, 91)
@@ -136,8 +158,70 @@ League member management, invites, and role assignments.
 
 - **Source**: Firestore Documentation
 - **URL**: https://firebase.google.com/docs/firestore/manage-data/delete-data
-- **Location**: `components/lib/leagues.ts` (lines 13-36)
-- **Description**: Batch deletion code adapted to delete documents in chunks. Cascade delete for league and related data
+- **Location**: `components/lib/leagues.ts` (deleteByQuery, deleteLeague)
+- **Description**: Batch deletion in chunks; cascade delete for league, invites, and members to prevent stalling
+
+### Firebase Storage (league image upload)
+- **Source**: Firebase Documentation — Cloud Storage for Firebase Admin SDK
+- **URL**: https://firebase.google.com/docs/storage/admin/start
+- **Location**: `functions/src/index.ts` (uploadLeagueImage: bucket, file.save, default bucket)
+- **Description**: Admin SDK storage use
+
+- **Source**: Firebase Documentation — Callable functions
+- **URL**: https://firebase.google.com/docs/functions/callable
+- **Location**: `functions/src/index.ts` (uploadLeagueImage callable), `components/lib/leagues.ts` (httpsCallable)
+- **Description**: Callable HTTPS function pattern; client calls with 
+
+- **Source**: Stack Overflow — Firebase Admin Storage upload, how to find a download URL
+- **URL**: https://stackoverflow.com/questions/71740015/firebase-admin-storage-upload-how-to-find-a-download-url
+- **Location**: `functions/src/index.ts` (uploadLeagueImage: permanent URL via token, not signed URL)
+- **Description**: Admin SDK has no `getDownloadURL()`; signed URLs are time-limited. Led to using `firebaseStorageDownloadTokens` metadata and building permanent URL `...?alt=media&token=...`.
+
+- **Source**: Stack Overflow — How to get the default bucket name in Firebase Functions
+- **URL**: https://stackoverflow.com/questions/73848542/how-to-get-the-default-bucket-name-in-firebase-functions
+- **Location**: `functions/src/index.ts` (admin.initializeApp({ storageBucket }), bucket() with no args)
+- **Description**: Specifying default bucket via `initializeApp({ storageBucket: "..." })` to fix “the specified bucket does not exist” when using `admin.storage().bucket()`.
+
+- **Source**: Firebase Documentation — firebase-admin.storage package (Admin Node SDK)
+- **URL**: https://firebase.google.com/docs/reference/admin/node/firebase-admin.storage
+- **Location**: `functions/src/index.ts` (storage bucket, file metadata)
+- **Description**: Admin Storage API reference for bucket, file, save, setMetadata.
+
+- **Source**: A guide to Firebase Storage download URLs and tokens (Sentinel Stand)
+- **URL**: https://www.sentinelstand.com/article/guide-to-firebase-storage-download-urls-and-tokens
+- **Location**: `functions/src/index.ts` (firebaseStorageDownloadTokens, permanent URL format)
+- **Description**: Explains persistent download URL format and `firebaseStorageDownloadTokens` custom metadata for permanent URLs (no 7-day signed-URL limit).
+
+- **Source**: Stack Overflow — Uploading files to Firebase Storage using REST API
+- **URL**: https://stackoverflow.com/questions/37631158/uploading-files-to-firebase-storage-using-rest-api
+- **Location**: (historical) earlier REST attempt in `components/lib/leagues.ts`; superseded by callable.
+- **Description**: REST upload pattern; used before switching to Cloud Function due to RN/device issues.
+
+- **Source**: Expo GitHub — with-firebase-storage-upload example
+- **URL**: https://github.com/expo/examples/blob/master/with-firebase-storage-upload/App.js
+- **Location**: (historical) XHR blob + uploadBytes approach; superseded by callable.
+- **Description**: Converting image-picker URI to Blob via XMLHttpRequest; referenced when fixing “creating blobs from arraybuffer”.
+
+- **Source**: Firebase Documentation — Upload files with Cloud Storage on Web
+- **URL**: https://firebase.google.com/docs/storage/web/upload-files
+- **Location**: (reference) client upload methods and error handling.
+- **Description**: `uploadBytes`, `uploadString`, metadata; informed move to callable after client errors.
+
+- **Source**: Stack Overflow — React Native Firebase Storage base64 and blob not working
+- **URL**: https://stackoverflow.com/questions/43514898/react-native-firebase-storage-base64-and-blob-not-working
+- **Location**: (reference) context for RN Blob/ArrayBuffer limitations.
+- **Description**: Led to Cloud Function with base64 instead of client upload.
+
+### Score from image (Vision API)
+- **Source**: Google Cloud Vision API
+- **URL**: https://cloud.google.com/vision/docs
+- **Location**: `functions/src/index.ts` (parseScoreFromImage, parseScoreFromImageHttp), `components/lib/scoreFromImage.ts`
+- **Description**: Callable + HTTP function; reads text from scoreboard/screenshot image and returns suggested player1/player2 scores. Client uses HTTP endpoint with Bearer token for reliable auth on Expo/RN.
+
+- **Source**: Cloud Vision API understanding chatgpt
+- **URL**: https://chatgpt.com/share/69983db7-2f0c-8007-ba9c-5c97e6a15761
+- **Location**: Bracket.tsx
+- **Description**: Used GPT to get a better idea of how to implemenet the Api.
 
 - **Source**: Firestore Documentation
 - **URL**: https://firebase.google.com/docs/firestore
@@ -197,6 +281,24 @@ League member management, invites, and role assignments.
 - **Location**: `app/league/editleague.tsx` (lines 10, throughout)
 - **Description**: KeyboardAvoidingView for handling keyboard interactions
 
+### Bottom tab bar (Airbnb-style)
+- **Source**: React Native Components — Airbnb Tabs
+- **URL**: https://reactnativecomponents.com/components/tabs/airbnb-tabs
+- **Location**: `components/ui/AnimatedTabBar.tsx` (throughout), `app/(tabs)/_layout.tsx` (tabBar prop, screenOptions animation/transitionSpec)
+- **Description**: Custom bottom tab bar with sliding pill indicator, semi-transparent bar, and smooth animations. Pill uses react-native-reanimated (500ms, Easing.inOut(Easing.cubic)); tab screen transition uses same duration and easing (fade animation)
+
+### Create-league walkthrough carousel
+- **Source**: React Native Components — Fancy Carousel (Walkthrough)
+- **URL**: https://reactnativecomponents.com/components/walkthrough/fancy-carousel
+- **Location**: `components/ui/WalkthroughCarousel.tsx` (throughout), `app/(tabs)/my-leagues.tsx` (create tournament card)
+- **Description**: Small-scale swipeable walkthrough above the create-league form: horizontal carousel with dot indicators and short tips (name your league, pick format, set options, invite after)
+
+### Fancy login (login page UI)
+- **Source**: React Native Components — Fancy Login
+- **URL**: https://reactnativecomponents.com/components/login/fancy-login
+- **Location**: `app/index.tsx` (login/sign-up form layout, header strip, form card, theme colours)
+- **Description**: Login page layout inspired by Fancy Login: header strip with tint accent, form in a card with shadow and border, theme-aware colours (light/dark), KeyboardAvoidingView, and Sign in / Sign up toggle with accent styling
+
 ### Expo Vector Icons
 - **Source**: Expo Vector Icons
 - **URL**: https://icons.expo.fyi/Index
@@ -250,15 +352,32 @@ League member management, invites, and role assignments.
 - **Location**: `app/verify-email.tsx`, `app/index.tsx`
 - **Description**: Email verification using `sendEmailVerification` and `emailVerified`
 
-## Dev Setup
-### Prerequisites
-- Node.js
-- Expo
-- Firebase
+### Profile avatars (DiceBear Bottts Neutral)
+- **Source**: DiceBear Bottts Neutral style
+- **URL**: https://www.dicebear.com/styles/bottts-neutral/
+- **Location**: `components/lib/avatars.ts` (DICEBEAR_BASE, AVATAR_OPTIONS, getAvatarImageUrl)
+- **Description**: Bottts Neutral avatar images for profile pictures (robot/character style by Pablo Stanley); each option uses a seed to generate a unique avatar.
+
+- **Source**: DiceBear HTTP API
+- **URL**: https://www.dicebear.com/how-to-use/http-api/
+- **Location**: `components/lib/avatars.ts` (image URL format: `9.x/bottts-neutral/png?seed=...`)
+- **Description**: Avatar images requested via HTTP API (PNG format)
+
+**Files that use avatars / profile image:**
+- `app/(tabs)/profile.tsx` – profile header avatar, tap to open AvatarPicker; Find friends list shows avatar/photo
+- `app/user/[userId].tsx` – public profile avatar
+- `app/league/[leagueId]/index.tsx` – member list avatars
+- `app/league/[leagueId]/chat.tsx` – chat message sender avatars
+- `components/ui/AvatarPicker.tsx` – modal grid of AVATAR_OPTIONS
+- `components/lib/users.ts` – `avatarId` on PublicUserSummary, `updateMyAvatarId()`
+- `components/lib/members.ts` – `avatarId` on ResolvedUser and when adding members
+- `components/lib/chat.ts` – `avatarId` on ChatMessage when sending and when mapping messages
 
 ### Firebase Setup
 1. Create Firebase project
 2. Enable Authentication (Email/Password)
 3. Create Firestore database
-4. Copy config to `FirebaseConfig.ts`
-5. Deploy security rules: `firebase deploy --only firestore:rules`
+4. Set up Storage (default bucket) if using league cover images
+5. Copy config to `FirebaseConfig.ts`
+6. Deploy security rules: `firebase deploy --only firestore:rules`
+7. Deploy Cloud Functions (league image upload via Storage, score-from-image via Vision API): `cd functions && npm run build && firebase deploy --only functions`

@@ -1,4 +1,4 @@
-// I define shared styles for the My Leagues tab (tab four) screen layout.
+// shared styles for my leagues tab screen layout
 import { StyleSheet } from 'react-native';
 
 export const styles = StyleSheet.create({
@@ -92,21 +92,16 @@ export const styles = StyleSheet.create({
     color: '#666666',
   },
 
-  // Each league item in the list
-  leagueItem: {
-    width: '100%',
-    paddingVertical: 18,
-    paddingHorizontal: 20,
-    borderRadius: 16,
-    borderWidth: 2,
-    borderColor: '#000000',
-    marginBottom: 14,
-    backgroundColor: '#FFFFFF',
-    shadowColor: '#000000',
-    shadowOffset: { width: 0, height: 2 },
-    shadowOpacity: 0.1,
-    shadowRadius: 4,
-    elevation: 3,
+  // League card grid (image + name)
+  leagueGrid: {
+    flexDirection: 'row',
+    flexWrap: 'wrap',
+    gap: 12,
+    marginTop: 8,
+  },
+
+  leagueCard: {
+    marginBottom: 0,
   },
 
   leagueName: {

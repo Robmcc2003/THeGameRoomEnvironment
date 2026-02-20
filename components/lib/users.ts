@@ -1,4 +1,4 @@
-// I provide user search by username/display name for the find-friends feature and resolve users by email.
+// user search by username/display name for find friends; resolve by email
 import { db } from '../../FirebaseConfig';
 import {
   collection,
@@ -11,6 +11,8 @@ import {
   startAt,
   where,
   doc,
+  setDoc,
+  serverTimestamp,
 } from 'firebase/firestore';
 import { resolveUserByEmail } from './members';
 
@@ -19,13 +21,14 @@ export type PublicUserSummary = {
   username?: string | null;
   displayName?: string | null;
   photoURL?: string | null;
+  avatarId?: string | null;
 };
 
 function normaliseSearchTerm(term: string): string {
   return (term ?? '').trim().toLowerCase();
 }
 
-// I search for users by username/display name so players can find friends.
+// search users by username or display name for find friends
 export async function searchUsers(term: string, opts?: { limit?: number; excludeUserId?: string | null }): Promise<PublicUserSummary[]> {
   const q = normaliseSearchTerm(term);
   const max = Math.min(Math.max(opts?.limit ?? 10, 1), 25);
@@ -33,7 +36,6 @@ export async function searchUsers(term: string, opts?: { limit?: number; exclude
 
   if (!q) return [];
 
-  // If it looks like an email, I use the existing email lookup.
   if (q.includes('@')) {
     const resolved = await resolveUserByEmail(q);
     if (!resolved) return [];
@@ -43,6 +45,7 @@ export async function searchUsers(term: string, opts?: { limit?: number; exclude
         id: resolved.uid,
         displayName: resolved.displayName ?? null,
         photoURL: resolved.photoURL ?? null,
+        avatarId: resolved.avatarId ?? null,
         username: null,
       },
     ];
@@ -51,7 +54,6 @@ export async function searchUsers(term: string, opts?: { limit?: number; exclude
   const usersCol = collection(db, 'users');
   const prefixEnd = `${q}\uf8ff`;
 
-  // I run two prefix queries (username and displayName) and merge results.
   const [byUsername, byDisplayName] = await Promise.all([
     getDocs(
       query(usersCol, orderBy('usernameLower'), startAt(q), endAt(prefixEnd), limit(max))
@@ -76,13 +78,13 @@ export async function searchUsers(term: string, opts?: { limit?: number; exclude
       username: data.username ?? null,
       displayName: data.displayName ?? null,
       photoURL: data.photoURL ?? null,
+      avatarId: data.avatarId ?? null,
     });
   };
 
   byUsername?.docs?.forEach(addDoc);
   byDisplayName?.docs?.forEach(addDoc);
 
-  // Fallback: exact match on username if prefix fields are missing
   if (results.length === 0) {
     const exact = await getDocs(query(usersCol, where('username', '==', term.trim()), limit(max))).catch(() => null);
     exact?.docs?.forEach(addDoc);
@@ -103,6 +105,15 @@ export async function getPublicUserSummary(userId: string): Promise<PublicUserSu
     username: data.username ?? null,
     displayName: data.displayName ?? null,
     photoURL: data.photoURL ?? null,
+    avatarId: data.avatarId ?? null,
   };
+}
+
+// I update the current user's avatarId in Firestore (users/{uid}). call with the signed-in user's uid.
+export async function updateMyAvatarId(uid: string, avatarId: string | null): Promise<void> {
+  const id = (uid ?? '').trim();
+  if (!id) throw new Error('User id is required.');
+  const userRef = doc(db, 'users', id);
+  await setDoc(userRef, { avatarId: avatarId ?? null, updatedAt: serverTimestamp() }, { merge: true });
 }
 

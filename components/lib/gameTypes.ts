@@ -1,6 +1,4 @@
-// Game Types Configuration
-// I define game-specific tournament types and scoring systems.
-// Each game has its own scoring rules and match result structure.
+// game-specific tournament types and scoring systems; each game has its own rules and result shape
 
 export type GameType = 'FIFA' | 'MADDEN' | 'NBA_2K' | 'CALL_OF_DUTY' | 'GENERIC';
 
@@ -20,8 +18,7 @@ export interface ScoringField {
   placeholder?: string;
 }
 
-// FIFA Configuration
-// FIFA uses goals scored as the primary scoring metric.
+// FIFA: goals as primary metric
 const fifaConfig: GameConfig = {
   id: 'FIFA',
   name: 'FIFA',
@@ -39,8 +36,7 @@ const fifaConfig: GameConfig = {
   },
 };
 
-// MADDEN Configuration
-// MADDEN uses points scored as the primary metric.
+// MADDEN: points as primary metric
 const maddenConfig: GameConfig = {
   id: 'MADDEN',
   name: 'Madden NFL',
@@ -58,8 +54,7 @@ const maddenConfig: GameConfig = {
   },
 };
 
-// NBA 2K Configuration
-// NBA 2K uses points scored as the primary metric, with optional stats.
+// NBA 2K: points as primary, optional rebounds/assists
 const nba2kConfig: GameConfig = {
   id: 'NBA_2K',
   name: 'NBA 2K',
@@ -78,8 +73,7 @@ const nba2kConfig: GameConfig = {
   },
 };
 
-// CALL OF DUTY Configuration
-// Call of Duty uses kills and optional objective points.
+// CALL OF DUTY: kills and optional objectives
 const codConfig: GameConfig = {
   id: 'CALL_OF_DUTY',
   name: 'Call of Duty',
@@ -105,8 +99,7 @@ const codConfig: GameConfig = {
   },
 };
 
-// GENERIC Configuration
-// Generic scoring for games not specifically configured.
+// GENERIC: fallback scoring when game type not configured
 const genericConfig: GameConfig = {
   id: 'GENERIC',
   name: 'Generic',
@@ -123,7 +116,7 @@ const genericConfig: GameConfig = {
   },
 };
 
-// I export all game configurations in a map for easy lookup
+// all game configs in a map for lookup
 export const GAME_CONFIGS: Record<GameType, GameConfig> = {
   FIFA: fifaConfig,
   MADDEN: maddenConfig,
@@ -132,14 +125,14 @@ export const GAME_CONFIGS: Record<GameType, GameConfig> = {
   GENERIC: genericConfig,
 };
 
-// I get a game configuration by type, defaulting to GENERIC if not found
+// get game config by type, default to GENERIC if not found
 export function getGameConfig(gameType: string | null | undefined): GameConfig {
   if (!gameType) return GAME_CONFIGS.GENERIC;
   const upperType = gameType.toUpperCase().replace(/\s+/g, '_') as GameType;
   return GAME_CONFIGS[upperType] || GAME_CONFIGS.GENERIC;
 }
 
-// I get all available game types as an array
+// get all available game types
 export function getAvailableGameTypes(): GameConfig[] {
   return Object.values(GAME_CONFIGS);
 }
