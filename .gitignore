@@ -48,8 +48,6 @@ android/app/build/
 .gradle/
 .idea/
 *.keystore
-FirebaseConfig.ts
-
 # OS/editor
 .DS_Store
 .vscode/
